@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- CH340/CH341 USB to Serial -->
+    <usb-device vendor-id="6790" product-id="29987" /> <!-- Пример для CH340 -->
+</resources>

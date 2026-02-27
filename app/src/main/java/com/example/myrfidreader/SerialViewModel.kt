@@ -7,15 +7,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.hoho.android.usbserial.util.SerialInputOutputManager
-import java.util.concurrent.Executors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.io.File
-import java.io.FileOutputStream
+import java.util.concurrent.Executors
 
 class SerialViewModel(application: Application) : AndroidViewModel(application),
     SerialInputOutputManager.Listener {
@@ -34,6 +37,13 @@ class SerialViewModel(application: Application) : AndroidViewModel(application),
     private val accumulator = mutableListOf<Byte>()
 
     fun connectAndRead() {
+        // Если уже подключены, не делаем ничего или показываем сообщение
+        if (serialPort != null && usbIoManager != null) {
+            synchronized(this) {
+                rfidData += "Уже подключено\n"
+            }
+            return
+        }
         val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
         if (availableDrivers.isEmpty()) {
             rfidData += "Устройство не найдено\n"
@@ -47,7 +57,7 @@ class SerialViewModel(application: Application) : AndroidViewModel(application),
         try {
             port.open(connection)
             // Скорость как в вашем ридере
-            port.setParameters(19200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
+            port.setParameters(115200, 8, UsbSerialPort.STOPBITS_1, UsbSerialPort.PARITY_NONE)
 
             // Включаем линии управления (DTR/RTS)
             port.dtr = true
@@ -59,7 +69,7 @@ class SerialViewModel(application: Application) : AndroidViewModel(application),
             usbIoManager = SerialInputOutputManager(port, this)
             executor.submit(usbIoManager)
 
-            rfidData += "Подключено (Terminal Mode)\n"
+            rfidData += "Подключено (Terminal Mode 115200)\n"
         } catch (e: Exception) {
             rfidData += "Ошибка: ${e.message}\n"
         }
@@ -153,24 +163,53 @@ class SerialViewModel(application: Application) : AndroidViewModel(application),
 
 
     //функция очистки файла логов
+//    fun clearLogs() {
+//        executor.submit {
+//            try {
+//                // 1. Очищаем физический файл
+//                val file = File(getApplication<Application>().filesDir, "rfid_logs.txt")
+//                if (file.exists()) {
+//                    // Открываем без флага append, чтобы перезаписать файл пустым местом
+//                    //FileOutputStream(file).use { it.write("".toByteArray()) }
+//                    file.writeText("") // Это короче и надежнее FileOutputStream
+//                }
+//
+//                // 2. Обновляем UI (в основном потоке через synchronized или post)
+//                synchronized(this) {
+//                    rfidData = ""
+//                    rfidData = "Лог очищен ${dateFormatter.format(Date())}\n"
+//                }
+//
+//            } catch (e: Exception) {
+//                e.printStackTrace()
+//            }
+//        }
+//    }
     fun clearLogs() {
-        executor.submit {
+        viewModelScope.launch {
             try {
-                // 1. Очищаем физический файл
-                val file = File(getApplication<Application>().filesDir, "rfid_logs.txt")
-                if (file.exists()) {
-                    // Открываем без флага append, чтобы перезаписать файл пустым местом
-                    FileOutputStream(file).use { it.write("".toByteArray()) }
+                // Работа с файлом в фоновом потоке
+                val result = withContext(Dispatchers.IO) {
+                    val context = getApplication<Application>()
+                    val file = File(context.filesDir, "rfid_logs.txt")
+
+                    if (file.exists()) {
+                        file.writeText("") // Очищаем файл
+                    } else {
+                        file.createNewFile() // Создаем новый
+                    }
+
+                    dateFormatter.format(Date()) // Возвращаем timestamp
                 }
 
-                // 2. Обновляем UI (в основном потоке через synchronized или post)
-                synchronized(this) {
-                    rfidData = "Лог очищен ${dateFormatter.format(Date())}\n"
-                }
+                // Обновление UI в главном потоке (уже автоматически)
+                rfidData = ""
+                rfidData = "Лог очищен $result\n"
+
             } catch (e: Exception) {
                 e.printStackTrace()
+                rfidData += "Ошибка очистки: ${e.message}\n"
             }
         }
     }
-
-}
+    }

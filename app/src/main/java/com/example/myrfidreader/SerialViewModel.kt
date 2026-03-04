@@ -83,6 +83,11 @@ class SerialViewModel(application: Application) : AndroidViewModel(application),
         }
     }
 
+    fun disconnect() {
+        UsbConnectionHolder.closeConnection()
+        rfidData += "Отключено\n"
+    }
+
     override fun onDataReceived(data: ByteArray) {
         // Обработка данных для лога (как было раньше)
         for (byte in data) {

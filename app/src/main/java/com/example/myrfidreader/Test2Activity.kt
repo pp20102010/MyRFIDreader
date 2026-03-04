@@ -12,20 +12,27 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -37,7 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.myrfidreader.ui.theme.MyRFIDreaderTheme
 
-class TestActivity : ComponentActivity() {
+class Test2Activity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -46,23 +53,27 @@ class TestActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    TestScreen()
+                    Test2Screen()
                 }
             }
         }
     }
 }
 
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TestScreen(viewModel: TestViewModel = viewModel()) {
+fun Test2Screen(viewModel: Test2ViewModel = viewModel()) {
     val context = LocalContext.current
     val isConnected by UsbConnectionHolder.isConnected
     val isTestRunning by viewModel.isTestRunning.collectAsState()
     val epcList by viewModel.epcList.collectAsState()
     val elapsedSeconds by viewModel.elapsedSeconds.collectAsState()
+    val testDuration by viewModel.testDuration.collectAsState()
 
     var showConnectPrompt by remember { mutableStateOf(false) }
+    var expandedDuration by remember { mutableStateOf(false) }
+    val durationOptions = listOf(0.5, 1.0, 2.0, 3.0, 4.0, 5.0)
+    var selectedDuration by remember { mutableDoubleStateOf(testDuration) }
 
     LaunchedEffect(isConnected) {
         if (!isConnected) {
@@ -76,16 +87,14 @@ fun TestScreen(viewModel: TestViewModel = viewModel()) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Заголовок
         Text(
-            text = "Тест 1",
+            text = "Тест 2",
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        // Пояснение
         Text(
-            text = "Сколько меток (EPC - номер) и сколько раз было считано с нажатия кнопки Пуск (считывание производится раз в секунду, % - результативность)",
+            text = "Сколько раз за заданное количество секунд каких меток (EPC - номер) и сколько раз было считано с нажатия кнопки Пуск",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier
                 .fillMaxWidth()
@@ -108,36 +117,105 @@ fun TestScreen(viewModel: TestViewModel = viewModel()) {
                             context.startActivity(Intent(context, MainActivity::class.java))
                         }
                     ) {
-                        Text("Подключиться (в настройках программы)") // изменён текст
+                        Text("Подключиться (в настройках программы)")
                     }
                 }
             }
         } else {
-            // Таймер и кнопка Пуск/Стоп
+            // Строка с выбором времени и кнопкой Пуск
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Время: ${elapsedSeconds} с")
+                ExposedDropdownMenuBox(
+                    expanded = expandedDuration,
+                    onExpandedChange = { expandedDuration = it }
+                ) {
+                    OutlinedTextField(
+                        value = "${selectedDuration} с",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Время теста") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDuration) },
+                        modifier = Modifier
+                            .width(120.dp)
+                            .menuAnchor()
+                    )
+                    DropdownMenu(
+                        expanded = expandedDuration,
+                        onDismissRequest = { expandedDuration = false }
+                    ) {
+                        durationOptions.forEach { duration ->
+                            DropdownMenuItem(
+                                text = { Text("$duration с") },
+                                onClick = {
+                                    selectedDuration = duration
+                                    viewModel.setTestDuration(duration)
+                                    expandedDuration = false
+                                }
+                            )
+                        }
+                    }
+                }
+
                 Button(
                     onClick = {
-                        if (isTestRunning) {
-                            viewModel.stopTest()
-                        } else {
-                            viewModel.startTest()
-                        }
+                        viewModel.startTest(selectedDuration)
                     },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isTestRunning) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.primary
-                    )
+                    enabled = !isTestRunning,
+                    modifier = Modifier
                 ) {
-                    Text(if (isTestRunning) "Стоп" else "Пуск")
+                    Text("Пуск")
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Отображение последнего сырого ответа
+//            Text("Последний ответ:", style = MaterialTheme.typography.labelLarge)
+//            Surface(
+//                modifier = Modifier.fillMaxWidth(),
+//                color = MaterialTheme.colorScheme.surfaceVariant,
+//                shape = MaterialTheme.shapes.small
+//            ) {
+//                Text(
+//                    text = viewModel.lastRawResponse,
+//                    style = MaterialTheme.typography.bodySmall,
+//                    modifier = Modifier.padding(8.dp)
+//                )
+//            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Отладочный лог (показывает, что происходит внутри)
+//            Text("Отладка:", style = MaterialTheme.typography.labelLarge)
+//            Surface(
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .height(150.dp),
+//                color = MaterialTheme.colorScheme.surfaceVariant,
+//                shape = MaterialTheme.shapes.small
+//            ) {
+//                Text(
+//                    text = viewModel.debugLog,
+//                    style = MaterialTheme.typography.bodySmall,
+//                    modifier = Modifier
+//                        .padding(8.dp)
+//                        .verticalScroll(rememberScrollState())
+//                )
+//            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Время (прошедшее / общее)
+            if (isTestRunning) {
+                Text("Прошло: ${"%.1f".format(elapsedSeconds)} с / ${"%.1f".format(testDuration)} с")
+            } else {
+                Text("Время теста: ${"%.1f".format(testDuration)} с")
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Заголовки таблицы
             Row(
@@ -146,15 +224,13 @@ fun TestScreen(viewModel: TestViewModel = viewModel()) {
             ) {
                 Text("EPC", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(2f))
                 Text("Кол-во", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                Text("%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-            // Список меток
+            // Список меток (только один, обновляемый)
             LazyColumn(modifier = Modifier.fillMaxWidth()) {
                 items(epcList) { item ->
-                    val percent = if (elapsedSeconds > 0) (item.count * 100) / elapsedSeconds else 0
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -173,15 +249,9 @@ fun TestScreen(viewModel: TestViewModel = viewModel()) {
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.weight(1f)
                         )
-                        Text(
-                            text = "$percent%",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
-                        )
                     }
                 }
             }
         }
     }
 }
-

@@ -8,11 +8,11 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -59,20 +60,16 @@ import androidx.core.content.FileProvider
 import com.example.myrfidreader.ui.theme.MyRFIDreaderTheme
 import java.io.File
 
-
 class MainActivity : ComponentActivity() {
-    // проект загружен на github 24.02.2026 https://github.com/pp20102010/MyRFIDreader
 
     private val viewModel: SerialViewModel by viewModels()
     private val ACTION_USB_PERMISSION = "com.example.myrfidreader.USB_PERMISSION"
 
-    // Приемник ответа от системы: разрешил ли пользователь доступ к USB
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (ACTION_USB_PERMISSION == intent.action) {
                 val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
                 if (granted) {
-                    // Если разрешение получено — запускаем чтение
                     viewModel.connectAndRead()
                 }
             }
@@ -82,7 +79,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Регистрируем ресивер один раз при запуске приложения
         val filter = IntentFilter(ACTION_USB_PERMISSION)
         ContextCompat.registerReceiver(
             this,
@@ -111,7 +107,7 @@ class MainActivity : ComponentActivity() {
             .findAllDrivers(usbManager)
 
         if (availableDrivers.isEmpty()) {
-            viewModel.connectAndRead() // Там выведется ошибка "Устройство не найдено"
+            viewModel.connectAndRead()
             return
         }
 
@@ -119,10 +115,8 @@ class MainActivity : ComponentActivity() {
         val device = driver.device
 
         if (usbManager.hasPermission(device)) {
-            // Если разрешение уже есть — сразу читаем
             viewModel.connectAndRead()
         } else {
-            // Если разрешения нет — запрашиваем его у пользователя
             val flags =
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
             val permissionIntent =
@@ -131,17 +125,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Удаляем ресивер при закрытии приложения, чтобы не было утечек
     override fun onDestroy() {
         super.onDestroy()
         unregisterReceiver(usbReceiver)
     }
 
-    //функция поделиться файлом лога
     fun shareLogFile() {
         val file = File(filesDir, "rfid_logs.txt")
         if (!file.exists() || file.length() == 0L) {
-            Toast.makeText(this, "Лог пуст", Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(this, "Лог пуст", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -151,7 +143,6 @@ class MainActivity : ComponentActivity() {
                 "$packageName.provider",
                 file
             )
-
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_STREAM, contentUri)
@@ -159,11 +150,7 @@ class MainActivity : ComponentActivity() {
             }
             startActivity(Intent.createChooser(shareIntent, "Отправить лог через..."))
         } catch (e: Exception) {
-            Toast.makeText(
-                this,
-                "Ошибка: ${e.message}",
-                Toast.LENGTH_LONG
-            ).show()
+            android.widget.Toast.makeText(this, "Ошибка: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 }
@@ -213,7 +200,7 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.width(12.dp))
-                        Text("RFID Reader 2026")
+                        Text("Настройки программы")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -228,7 +215,7 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            // Первая строка кнопок
+            // Первая строка: подключение и очистка
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -261,41 +248,28 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Вторая строка: выбор скорости и отправка лога
+            // Вторая строка: отключение и отправка лога
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Button(
-                    onClick = { expandedBaud = true },
-                    modifier = Modifier
-                        .weight(1.2f)
-                        .height(40.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
+                    onClick = {
+                        viewModel.disconnect()
+                    },
+                    modifier = Modifier.weight(1.2f),
+                    contentPadding = PaddingValues(horizontal = 4.dp)
                 ) {
                     Text(
-                        text = "Скорость: ${baudRateToString(currentBaud)}",
+                        text = "Отключиться",
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
                 }
 
-                // Кнопка отправки лога с безопасным приведением контекста
-                val activity = context as? MainActivity
                 Button(
-                    onClick = {
-                        activity?.shareLogFile()
-                            ?: Toast.makeText(context, "Ошибка: не удалось получить Activity", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp),
+                    onClick = { (context as MainActivity).shareLogFile() },
+                    modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                     contentPadding = PaddingValues(horizontal = 4.dp)
                 ) {
@@ -307,32 +281,66 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
                 }
             }
 
-            // Меню выбора скорости
-            DropdownMenu(
-                expanded = expandedBaud,
-                onDismissRequest = { expandedBaud = false }
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Строка с заголовком лога и кнопкой скорости
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                listOf(0, 1, 2, 3, 4).forEach { value ->
-                    DropdownMenuItem(
-                        text = { Text(baudRateToString(value)) },
-                        onClick = {
-                            viewModel.updateBaudRate(value)
-                            expandedBaud = false
+                Text(
+                    text = "Лог сообщений (HEX):",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                // Кнопка скорости (белая, уменьшенная)
+                Box {
+                    Button(
+                        onClick = { expandedBaud = true },
+                        modifier = Modifier
+                            .height(32.dp)
+                            .widthIn(min = 120.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surface,
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "Скорость: ${baudRateToString(currentBaud)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = expandedBaud,
+                        onDismissRequest = { expandedBaud = false }
+                    ) {
+                        listOf(0, 1, 2, 3, 4).forEach { value ->
+                            DropdownMenuItem(
+                                text = { Text(baudRateToString(value)) },
+                                onClick = {
+                                    viewModel.updateBaudRate(value)
+                                    expandedBaud = false
+                                }
+                            )
                         }
-                    )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Text(
-                text = "Лог сообщений (HEX):",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary
-            )
-
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
+            // Лог сообщений
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(logs) { log ->
                     Card(
@@ -354,3 +362,5 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
         }
     }
 }
+
+// baudRateToString уже есть в Utils.kt, поэтому отдельно не определяем.

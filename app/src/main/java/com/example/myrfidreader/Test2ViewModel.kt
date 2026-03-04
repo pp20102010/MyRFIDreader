@@ -10,14 +10,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-
-class TestViewModel : ViewModel(), OnDataReceivedListener {
+class Test2ViewModel : ViewModel(), OnDataReceivedListener {
 
     private val _epcList = MutableStateFlow<List<EpcItem>>(emptyList())
     val epcList: StateFlow<List<EpcItem>> = _epcList
 
-    private val _elapsedSeconds = MutableStateFlow(0L)
-    val elapsedSeconds: StateFlow<Long> = _elapsedSeconds
+    private val _elapsedSeconds = MutableStateFlow(0.0)
+    val elapsedSeconds: StateFlow<Double> = _elapsedSeconds
+
+    private val _testDuration = MutableStateFlow(1.0)
+    val testDuration: StateFlow<Double> = _testDuration
 
     private val _isTestRunning = MutableStateFlow(false)
     val isTestRunning: StateFlow<Boolean> = _isTestRunning
@@ -25,168 +27,149 @@ class TestViewModel : ViewModel(), OnDataReceivedListener {
     var lastRawResponse by mutableStateOf("")
         private set
 
-    var debugInfo by mutableStateOf("")
+    var debugLog by mutableStateOf("")
         private set
 
-    private var startTime = 0L
-    private val epcMap = mutableMapOf<String, EpcItem>()
+    private val epcMap = mutableMapOf<String, Int>() // храним только счётчики
     private val incomingBuffer = mutableListOf<Byte>()
+    private var startTime = 0L
+    private var targetDurationMs = 0L
 
-    fun startTest() {
+    fun setTestDuration(duration: Double) {
+        _testDuration.value = duration
+    }
+
+    fun startTest(duration: Double) {
         if (_isTestRunning.value) return
         epcMap.clear()
         _epcList.value = emptyList()
         incomingBuffer.clear()
         lastRawResponse = ""
-        debugInfo = ""
+        debugLog = ""
+        _elapsedSeconds.value = 0.0
+        _testDuration.value = duration
+        targetDurationMs = (duration * 1000).toLong()
         startTime = System.currentTimeMillis()
         _isTestRunning.value = true
 
+        addDebug("Тест запущен на ${duration} с")
+
         viewModelScope.launch {
             while (_isTestRunning.value) {
-                _elapsedSeconds.value = (System.currentTimeMillis() - startTime) / 1000
-                delay(1000)
+                val elapsed = System.currentTimeMillis() - startTime
+                _elapsedSeconds.value = elapsed / 1000.0
+                if (elapsed >= targetDurationMs) {
+                    stopTest()
+                    break
+                }
+                delay(100)
             }
         }
 
         UsbDataDispatcher.registerListener(this)
-        addDebugMessage("Тест запущен")
     }
 
     fun stopTest() {
         _isTestRunning.value = false
         UsbDataDispatcher.unregisterListener(this)
-        addDebugMessage("Тест остановлен")
+        addDebug("Тест остановлен")
     }
 
     override fun onDataReceived(data: ByteArray) {
-        addDebugMessage("Данные получены: ${data.size} байт")
+        if (!_isTestRunning.value) return
+        addDebug("Получено ${data.size} байт")
         incomingBuffer.addAll(data.toList())
-        addDebugMessage("Буфер: ${incomingBuffer.size} байт")
         processIncomingBuffer()
     }
 
     private fun processIncomingBuffer() {
         while (true) {
             val headerIndex = findHeader(incomingBuffer, byteArrayOf(0x43, 0x54))
-            if (headerIndex == -1) {
-                addDebugMessage("Заголовок не найден, ждём...")
-                break
-            }
-            addDebugMessage("Заголовок найден на позиции $headerIndex")
+            if (headerIndex == -1) break
             if (headerIndex > 0) {
                 incomingBuffer.subList(0, headerIndex).clear()
-                addDebugMessage("Удалён мусор до заголовка")
+                addDebug("Удалён мусор до заголовка")
             }
-            if (incomingBuffer.size < 8) {
-                addDebugMessage("Меньше 8 байт, ждём...")
-                break
-            }
+            if (incomingBuffer.size < 8) break
+
             val length = ((incomingBuffer[2].toInt() and 0xFF) shl 8) or (incomingBuffer[3].toInt() and 0xFF)
             val totalPacketLen = 4 + length
-            addDebugMessage("Длина пакета: $length, всего байт: $totalPacketLen")
-            if (incomingBuffer.size < totalPacketLen) {
-                addDebugMessage("Не хватает данных: есть ${incomingBuffer.size}, нужно $totalPacketLen")
-                break
-            }
+            if (incomingBuffer.size < totalPacketLen) break
+
             val packet = incomingBuffer.subList(0, totalPacketLen).toByteArray()
             lastRawResponse = packet.joinToString(" ") { "%02X".format(it) }
-            addDebugMessage("Пакет извлечён, первые 10 байт: ${packet.take(10).joinToString("") { "%02X".format(it) }}")
 
-            // Проверка контрольной суммы
             val checkPos = totalPacketLen - 1
             val receivedChecksum = packet[checkPos]
             val dataForChecksum = packet.copyOfRange(0, checkPos)
             val calculatedChecksum = calculateChecksum(dataForChecksum)
             if (receivedChecksum != calculatedChecksum) {
-                addDebugMessage("Ошибка контрольной суммы: получено ${"%02X".format(receivedChecksum)}, вычислено ${"%02X".format(calculatedChecksum)}")
+                addDebug("Ошибка контрольной суммы: получено ${"%02X".format(receivedChecksum)}, вычислено ${"%02X".format(calculatedChecksum)}")
                 incomingBuffer.subList(0, totalPacketLen).clear()
                 continue
             }
-            addDebugMessage("Контрольная сумма OK")
+
+            addDebug("Пакет корректен, команда 0x${packet[5].toString(16)}")
             processResponsePacket(packet)
             incomingBuffer.subList(0, totalPacketLen).clear()
-            addDebugMessage("Пакет удалён из буфера")
         }
     }
 
     private fun processResponsePacket(packet: ByteArray) {
         val cmd = packet[5].toInt() and 0xFF
         val status = packet[6].toInt() and 0xFF
-        addDebugMessage("Команда: 0x${cmd.toString(16)}, статус: $status")
         val data = packet.copyOfRange(7, packet.size - 1)
+
         if (status != 0x01) {
-            addDebugMessage("Статус не успех (0x01)")
+            addDebug("Статус ошибки: $status")
             return
         }
+
         when (cmd) {
             0x01, 0x45 -> parseTags(data, cmd)
-            else -> addDebugMessage("Неизвестная команда: 0x${cmd.toString(16)}")
+            else -> addDebug("Неизвестная команда: 0x${cmd.toString(16)}")
         }
     }
 
     private fun parseTags(data: ByteArray, cmd: Int) {
-        addDebugMessage("Парсинг тегов для команды 0x${cmd.toString(16)}")
         if (cmd == 0x45) {
-            // Формат для CMD_ACTIVE_DATA
             if (data.size < 8) {
-                addDebugMessage("Слишком мало данных для команды 0x45")
+                addDebug("Слишком мало данных для 0x45")
                 return
             }
             var pos = 7
             val tagCount = data[pos].toInt() and 0xFF
-            addDebugMessage("Количество тегов: $tagCount")
+            addDebug("Количество тегов: $tagCount")
             pos += 1
             for (i in 0 until tagCount) {
-                if (pos + 1 > data.size) {
-                    addDebugMessage("Недостаточно данных для тега $i")
-                    break
-                }
+                if (pos + 1 > data.size) break
                 val tagLen = data[pos].toInt() and 0xFF
-                addDebugMessage("Длина тега $i: $tagLen")
-                if (pos + 1 + tagLen > data.size) {
-                    addDebugMessage("Данные тега $i выходят за границы")
-                    break
-                }
+                if (pos + 1 + tagLen > data.size) break
                 val tagData = data.copyOfRange(pos + 1, pos + 1 + tagLen)
-                if (tagData.size < 3) {
-                    addDebugMessage("Данные тега слишком короткие")
-                    continue
-                }
+                if (tagData.size < 3) continue
                 val epcBytes = tagData.copyOfRange(2, tagData.size - 1)
                 val epcHex = epcBytes.joinToString("") { "%02X".format(it) }
-                addDebugMessage("Найден EPC: $epcHex")
+                addDebug("Найден EPC: $epcHex")
                 updateEpcCount(epcHex)
                 pos += 1 + tagLen
             }
         } else {
-            // Формат для CMD_INVENTORY_TAG (0x01)
             if (data.size < 2) {
-                addDebugMessage("Слишком мало данных для команды 0x01")
+                addDebug("Слишком мало данных для 0x01")
                 return
             }
             val tagCount = ((data[0].toInt() and 0xFF) shl 8) or (data[1].toInt() and 0xFF)
-            addDebugMessage("Количество тегов: $tagCount")
+            addDebug("Количество тегов: $tagCount")
             var pos = 2
             for (i in 0 until tagCount) {
-                if (pos + 1 > data.size) {
-                    addDebugMessage("Недостаточно данных для тега $i")
-                    break
-                }
+                if (pos + 1 > data.size) break
                 val tagLen = data[pos].toInt() and 0xFF
-                addDebugMessage("Длина тега $i: $tagLen")
-                if (pos + 1 + tagLen > data.size) {
-                    addDebugMessage("Данные тега $i выходят за границы")
-                    break
-                }
+                if (pos + 1 + tagLen > data.size) break
                 val tagData = data.copyOfRange(pos + 1, pos + 1 + tagLen)
-                if (tagData.size < 3) {
-                    addDebugMessage("Данные тега слишком короткие")
-                    continue
-                }
+                if (tagData.size < 3) continue
                 val epcBytes = tagData.copyOfRange(2, tagData.size - 1)
                 val epcHex = epcBytes.joinToString("") { "%02X".format(it) }
-                addDebugMessage("Найден EPC: $epcHex")
+                addDebug("Найден EPC: $epcHex")
                 updateEpcCount(epcHex)
                 pos += 1 + tagLen
             }
@@ -194,13 +177,12 @@ class TestViewModel : ViewModel(), OnDataReceivedListener {
     }
 
     private fun updateEpcCount(epc: String) {
-        val item = epcMap[epc]
-        if (item != null) {
-            item.count++
-        } else {
-            epcMap[epc] = EpcItem(epc, 1)
-        }
-        _epcList.value = epcMap.values.sortedByDescending { it.count }
+        val newCount = (epcMap[epc] ?: 0) + 1
+        epcMap[epc] = newCount
+        // Создаём новый список с неизменяемыми объектами
+        _epcList.value = epcMap.map { (epc, count) -> EpcItem(epc, count) }
+            .sortedByDescending { it.count }
+        addDebug("Счётчик для $epc увеличен до $newCount, всего элементов: ${epcMap.size}")
     }
 
     private fun findHeader(buffer: List<Byte>, header: ByteArray): Int {
@@ -225,8 +207,8 @@ class TestViewModel : ViewModel(), OnDataReceivedListener {
         return ((sum.inv() + 1) and 0xFF).toByte()
     }
 
-    private fun addDebugMessage(msg: String) {
-        debugInfo = "$msg\n$debugInfo".take(500)
+    private fun addDebug(msg: String) {
+        debugLog = "$msg\n$debugLog".take(500)
     }
 
     override fun onCleared() {

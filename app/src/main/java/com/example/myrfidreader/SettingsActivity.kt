@@ -1,21 +1,31 @@
 package com.example.myrfidreader
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -26,15 +36,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.myrfidreader.ui.theme.MyRFIDreaderTheme
-import kotlinx.coroutines.launch
+import java.io.File
 
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,12 +66,13 @@ class SettingsActivity : ComponentActivity() {
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
     val isConnected by UsbConnectionHolder.isConnected
 
     var selectedBaudRate by remember { mutableIntStateOf(viewModel.baudRate.value) }
     var rfPower by remember { mutableIntStateOf(viewModel.rfPower.value) }
     var selectedWorkMode by remember { mutableIntStateOf(viewModel.workMode.value) }
+
+    val logLines = viewModel.logData.split("\n").filter { it.isNotBlank() }.reversed()
 
     Column(
         modifier = Modifier
@@ -76,13 +87,24 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         )
 
         if (!isConnected) {
-            Text("Устройство не подключено", color = MaterialTheme.colorScheme.error)
-            Spacer(modifier = Modifier.height(8.dp))
-            Button(onClick = {
-                // Открываем MainActivity для подключения
-                context.startActivity(Intent(context, MainActivity::class.java))
-            }) {
-                Text("Подключиться")
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Ридер не подключён")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            context.startActivity(Intent(context, MainActivity::class.java))
+                        }
+                    ) {
+                        Text("Подключиться")
+                    }
+                }
             }
         } else {
             // === Скорость (Baud rate) ===
@@ -165,25 +187,107 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Button(
-                onClick = { viewModel.applySettings(selectedBaudRate, rfPower, selectedWorkMode) },
-                modifier = Modifier.fillMaxWidth()
+            // === Кнопки управления в две строки (2x2) ===
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text("Применить настройки")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.applySettings(selectedBaudRate, rfPower, selectedWorkMode) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Применить")
+                    }
+                    Button(
+                        onClick = { viewModel.readSettings() },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Прочитать")
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.clearLog() },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Очистить лог")
+                    }
+                    Button(
+                        onClick = {
+                            val logContent = viewModel.logData
+                            if (logContent.isBlank() || logContent.lines().size <= 1) {
+                                Toast.makeText(context, "Лог пуст", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            try {
+                                val file = File(context.filesDir, "settings_log.txt")
+                                file.writeText(logContent)
+                                val contentUri: Uri = FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.provider",
+                                    file
+                                )
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_STREAM, contentUri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Отправить лог настроек через..."))
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Отправить лог")
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Button(
-                onClick = {
-                    coroutineScope.launch {
-                        viewModel.readSettings()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
+            // === Заголовок лога ===
+            Text(
+                text = "Лог команд и ответов:",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            // === Лог, занимающий всё оставшееся пространство ===
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f) // занимает всё свободное место
             ) {
-                Text("Прочитать текущие настройки")
+                items(logLines) { line ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Text(
+                            text = line,
+                            modifier = Modifier.padding(8.dp),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
             }
         }
     }
 }
+

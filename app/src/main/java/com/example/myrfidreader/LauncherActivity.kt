@@ -90,7 +90,7 @@ fun LauncherScreen() {
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Настройки программы")
+                Text("Настройки программы (подключение)")
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -124,6 +124,16 @@ fun LauncherScreen() {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Провести тест 2")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = {
+                    context.startActivity(Intent(context, InstructionActivity::class.java))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Краткая инструкция")
             }
         }
     }

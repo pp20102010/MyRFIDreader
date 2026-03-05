@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -24,10 +26,15 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -81,174 +88,152 @@ fun Test2Screen(viewModel: Test2ViewModel = viewModel()) {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = "Тест 2",
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        Text(
-            text = "Сколько раз за заданное количество секунд каких меток (EPC - номер) и сколько раз было считано с нажатия кнопки Пуск",
-            style = MaterialTheme.typography.bodyMedium,
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Тест 2") },
+                navigationIcon = {
+                    IconButton(onClick = { (context as? Test2Activity)?.finish() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    titleContentColor = MaterialTheme.colorScheme.primary
+                )
+            )
+        }
+    ) { paddingValues ->
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp)
-        )
+                .padding(paddingValues)
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Тест 2",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
 
-        if (showConnectPrompt) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            Text(
+                text = "Сколько раз за заданное количество секунд каких меток (EPC - номер) " +
+                        "и сколько раз было считано с нажатия кнопки Пуск " +
+                        "(предварительно необходимо установить Active режим и периодичность " +
+                        "считывания 0сек в настройках ридера).",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            )
+
+            if (showConnectPrompt) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                 ) {
-                    Text("Ридер не подключён")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            context.startActivity(Intent(context, MainActivity::class.java))
-                        }
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("Подключиться (в настройках программы)")
+                        Text("Ридер не подключён")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                context.startActivity(Intent(context, MainActivity::class.java))
+                            }
+                        ) {
+                            Text("Подключиться (в настройках программы)")
+                        }
                     }
                 }
-            }
-        } else {
-            // Строка с выбором времени и кнопкой Пуск
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                ExposedDropdownMenuBox(
-                    expanded = expandedDuration,
-                    onExpandedChange = { expandedDuration = it }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedTextField(
-                        value = "${selectedDuration} с",
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Время теста") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDuration) },
-                        modifier = Modifier
-                            .width(120.dp)
-                            .menuAnchor()
-                    )
-                    DropdownMenu(
+                    ExposedDropdownMenuBox(
                         expanded = expandedDuration,
-                        onDismissRequest = { expandedDuration = false }
+                        onExpandedChange = { expandedDuration = it }
                     ) {
-                        durationOptions.forEach { duration ->
-                            DropdownMenuItem(
-                                text = { Text("$duration с") },
-                                onClick = {
-                                    selectedDuration = duration
-                                    viewModel.setTestDuration(duration)
-                                    expandedDuration = false
-                                }
+                        OutlinedTextField(
+                            value = "${selectedDuration} с",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Время теста") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDuration) },
+                            modifier = Modifier
+                                .width(120.dp)
+                                .menuAnchor()
+                        )
+                        DropdownMenu(
+                            expanded = expandedDuration,
+                            onDismissRequest = { expandedDuration = false }
+                        ) {
+                            durationOptions.forEach { duration ->
+                                DropdownMenuItem(
+                                    text = { Text("$duration с") },
+                                    onClick = {
+                                        selectedDuration = duration
+                                        viewModel.setTestDuration(duration)
+                                        expandedDuration = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Button(
+                        onClick = { viewModel.startTest(selectedDuration) },
+                        enabled = !isTestRunning
+                    ) {
+                        Text("Пуск")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (isTestRunning) {
+                    Text("Прошло: ${"%.1f".format(elapsedSeconds)} с / ${"%.1f".format(testDuration)} с")
+                } else {
+                    Text("Время теста: ${"%.1f".format(testDuration)} с")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("EPC", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(2f))
+                    Text("Кол-во", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(epcList) { item ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = item.epc,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(2f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${item.count}",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
                             )
                         }
-                    }
-                }
-
-                Button(
-                    onClick = {
-                        viewModel.startTest(selectedDuration)
-                    },
-                    enabled = !isTestRunning,
-                    modifier = Modifier
-                ) {
-                    Text("Пуск")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Отображение последнего сырого ответа
-//            Text("Последний ответ:", style = MaterialTheme.typography.labelLarge)
-//            Surface(
-//                modifier = Modifier.fillMaxWidth(),
-//                color = MaterialTheme.colorScheme.surfaceVariant,
-//                shape = MaterialTheme.shapes.small
-//            ) {
-//                Text(
-//                    text = viewModel.lastRawResponse,
-//                    style = MaterialTheme.typography.bodySmall,
-//                    modifier = Modifier.padding(8.dp)
-//                )
-//            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Отладочный лог (показывает, что происходит внутри)
-//            Text("Отладка:", style = MaterialTheme.typography.labelLarge)
-//            Surface(
-//                modifier = Modifier
-//                    .fillMaxWidth()
-//                    .height(150.dp),
-//                color = MaterialTheme.colorScheme.surfaceVariant,
-//                shape = MaterialTheme.shapes.small
-//            ) {
-//                Text(
-//                    text = viewModel.debugLog,
-//                    style = MaterialTheme.typography.bodySmall,
-//                    modifier = Modifier
-//                        .padding(8.dp)
-//                        .verticalScroll(rememberScrollState())
-//                )
-//            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Время (прошедшее / общее)
-            if (isTestRunning) {
-                Text("Прошло: ${"%.1f".format(elapsedSeconds)} с / ${"%.1f".format(testDuration)} с")
-            } else {
-                Text("Время теста: ${"%.1f".format(testDuration)} с")
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Заголовки таблицы
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("EPC", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(2f))
-                Text("Кол-во", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // Список меток (только один, обновляемый)
-            LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                items(epcList) { item ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = item.epc,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(2f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "${item.count}",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
-                        )
                     }
                 }
             }

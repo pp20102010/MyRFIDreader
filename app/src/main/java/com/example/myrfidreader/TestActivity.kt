@@ -14,14 +14,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -53,7 +61,7 @@ class TestActivity : ComponentActivity() {
     }
 }
 
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TestScreen(viewModel: TestViewModel = viewModel()) {
     val context = LocalContext.current
@@ -70,118 +78,134 @@ fun TestScreen(viewModel: TestViewModel = viewModel()) {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Заголовок
-        Text(
-            text = "Тест 1",
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        // Пояснение
-        Text(
-            text = "Сколько меток (EPC - номер) и сколько раз было считано с нажатия кнопки Пуск (считывание производится раз в секунду, % - результативность)",
-            style = MaterialTheme.typography.bodyMedium,
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Тест 1") },
+                navigationIcon = {
+                    IconButton(onClick = { (context as? TestActivity)?.finish() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    titleContentColor = MaterialTheme.colorScheme.primary
+                )
+            )
+        }
+    ) { paddingValues ->
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp)
-        )
+                .padding(paddingValues)
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Тест 1",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
 
-        if (showConnectPrompt) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            Text(
+                text = "Сколько меток (EPC - номер) и сколько раз было считано с нажатия кнопки " +
+                        "Пуск (предварительно необходимо установить Active режим и " +
+                        "периодичность считывания 1сек в настройках ридера). " +
+                        "Считывание производится раз в секунду, % - результативность)",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            )
+
+            if (showConnectPrompt) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                 ) {
-                    Text("Ридер не подключён")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Button(
-                        onClick = {
-                            context.startActivity(Intent(context, MainActivity::class.java))
-                        }
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("Подключиться (в настройках программы)") // изменён текст
+                        Text("Ридер не подключён")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = {
+                                context.startActivity(Intent(context, MainActivity::class.java))
+                            }
+                        ) {
+                            Text("Подключиться (в настройках программы)")
+                        }
                     }
                 }
-            }
-        } else {
-            // Таймер и кнопка Пуск/Стоп
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Время: ${elapsedSeconds} с")
-                Button(
-                    onClick = {
-                        if (isTestRunning) {
-                            viewModel.stopTest()
-                        } else {
-                            viewModel.startTest()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isTestRunning) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.primary
-                    )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(if (isTestRunning) "Стоп" else "Пуск")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Заголовки таблицы
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text("EPC", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(2f))
-                Text("Кол-во", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                Text("%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-            }
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // Список меток
-            LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                items(epcList) { item ->
-                    val percent = if (elapsedSeconds > 0) (item.count * 100) / elapsedSeconds else 0
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Text("Время: ${elapsedSeconds} с")
+                    Button(
+                        onClick = {
+                            if (isTestRunning) {
+                                viewModel.stopTest()
+                            } else {
+                                viewModel.startTest()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isTestRunning) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.primary
+                        )
                     ) {
-                        Text(
-                            text = item.epc,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(2f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "${item.count}",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "$percent%",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Text(if (isTestRunning) "Стоп" else "Пуск")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("EPC", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(4f))
+                    Text("Кол-во", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                    Text("%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+// Список меток
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(epcList) { item ->
+                        val percent = if (elapsedSeconds > 0) (item.count * 100) / elapsedSeconds else 0
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = item.epc,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(4f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${item.count}",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "$percent%",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
             }
         }
     }
 }
-

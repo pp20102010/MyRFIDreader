@@ -27,8 +27,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -39,6 +39,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -192,15 +193,11 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
         topBar = {
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Nfc,
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text("Настройки программы")
+                    Text("Настройки программы")
+                },
+                navigationIcon = {
+                    IconButton(onClick = { (context as? MainActivity)?.finish() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -341,7 +338,11 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             // Лог сообщений
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
                 items(logs) { log ->
                     Card(
                         modifier = Modifier
@@ -358,6 +359,21 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
                         )
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Кнопка во всю ширину для возврата на главный экран
+            Button(
+                onClick = {
+                    // Запускаем LauncherActivity и очищаем стек
+                    val intent = Intent(context, LauncherActivity::class.java)
+                    intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("На главный экран")
             }
         }
     }

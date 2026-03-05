@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -17,6 +18,14 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+data class PendingSettings(
+    val baudRate: Int,
+    val rfPower: Int,
+    val workMode: Int,
+    val filterTime: Int,
+    val buzzerEnabled: Boolean
+)
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application), OnDataReceivedListener {
 
@@ -29,6 +38,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _workMode = MutableStateFlow(1)   // 0=Answer,1=Active,2=Trigger
     val workMode: StateFlow<Int> = _workMode
 
+    private val _filterTime = MutableStateFlow(1) // периодичность 0..255 секунд
+    val filterTime: StateFlow<Int> = _filterTime
+
+    private val _buzzerEnabled = MutableStateFlow(true) // зуммер включён/выключен
+    val buzzerEnabled: StateFlow<Boolean> = _buzzerEnabled
+
     var logData by mutableStateOf("Лог настроек:\n")
         private set
 
@@ -38,7 +53,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val incomingBuffer = mutableListOf<Byte>()
 
     // Храним запрошенные новые настройки до получения текущих параметров
-    private var pendingSettings: Triple<Int, Int, Int>? = null
+    private var pendingSettings: PendingSettings? = null
 
     init {
         UsbDataDispatcher.registerListener(this)
@@ -46,8 +61,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     // ------------------ Публичные методы ------------------
-    fun applySettings(baudRate: Int, rfPower: Int, workMode: Int) {
-        pendingSettings = Triple(baudRate, rfPower, workMode)
+    fun applySettings(baudRate: Int, rfPower: Int, workMode: Int, filterTime: Int, buzzerEnabled: Boolean) {
+        val safeRfPower = rfPower.coerceIn(0, 30)
+        pendingSettings = PendingSettings(baudRate, rfPower, workMode, filterTime, buzzerEnabled)
         readDeviceParams()
     }
 
@@ -138,13 +154,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
             val packet = incomingBuffer.subList(0, totalPacketLen).toByteArray()
 
-            // Проверка контрольной суммы (по всем байтам до последнего)
             val checkPos = totalPacketLen - 1
             val receivedChecksum = packet[checkPos]
-            val dataForChecksum = packet.copyOfRange(0, checkPos) // весь пакет до контрольной суммы
+            val dataForChecksum = packet.copyOfRange(0, checkPos)
             val calculatedChecksum = calculateChecksum(dataForChecksum)
             if (receivedChecksum != calculatedChecksum) {
-                addLogEntry("RX", "Ошибка контрольной суммы: получено ${"%02X".format(receivedChecksum)}, вычислено ${"%02X".format(calculatedChecksum)}")
                 incomingBuffer.subList(0, totalPacketLen).clear()
                 continue
             }
@@ -174,42 +188,46 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun handleReadResponse(data: ByteArray) {
-        // data содержит DevType, Flag и 31 байт параметров (всего 33 байта)
         if (data.size < 33) {
             addLogEntry("RX", "Недостаточно данных в ответе на 0x20: размер ${data.size}")
             return
         }
 
-        val params = data // полный блок параметров
+        val devType = data[0]
+        val flag = data[1]
+        val params = data.copyOfRange(2, data.size) // параметры без DevType и Flag
+
+        // Обновляем UI значениями из прочитанных параметров
+        _workMode.value = params[1].toInt() and 0xFF
+        _rfPower.value = params[4].toInt() and 0xFF
+        _baudRate.value = params[6].toInt() and 0xFF
+        _filterTime.value = params[3].toInt() and 0xFF   // bFilterTime (смещение 3)
+        _buzzerEnabled.value = (params[5].toInt() and 0xFF) != 0 // bBeepEnable (смещение 5)
+
+        addLogEntry("RX", "Текущие настройки: режим ${_workMode.value}, мощность ${_rfPower.value}, скорость ${_baudRate.value}, фильтр ${_filterTime.value}, зуммер ${_buzzerEnabled.value}")
 
         // Если есть ожидающие новые настройки, модифицируем и отправляем
-        pendingSettings?.let { (newBaud, newPower, newMode) ->
+        pendingSettings?.let { pending ->
             val modified = params.clone()
-            // Смещения внутри params (после DevType(0), Flag(1)):
-            // [2] bTransport
-            // [3] bWorkMode   <-- меняем
-            // [4] bDeviceAddr
-            // [5] bFilterTime
-            // [6] bRFPower     <-- меняем
-            // [7] bBeepEnable
-            // [8] bUartBaudRate <-- меняем
-            modified[3] = newMode.toByte()
-            modified[6] = newPower.toByte()
-            modified[8] = newBaud.toByte()
+            modified[1] = pending.workMode.toByte()      // workMode
+            modified[3] = pending.filterTime.toByte()    // filterTime
+            modified[4] = pending.rfPower.toByte()       // rfPower
+            modified[5] = if (pending.buzzerEnabled) 1.toByte() else 0.toByte() // buzzer
+            modified[6] = pending.baudRate.toByte()      // baudRate
 
-            sendSetDeviceParams(modified)
+            val fullParams = byteArrayOf(devType, flag) + modified
+            sendSetDeviceParams(fullParams)
             pendingSettings = null
-        } ?: run {
-            // Просто чтение – обновляем UI
-            _workMode.value = params[3].toInt() and 0xFF
-            _rfPower.value = params[6].toInt() and 0xFF
-            _baudRate.value = params[8].toInt() and 0xFF
-            addLogEntry("RX", "Текущие настройки: режим ${_workMode.value}, мощность ${_rfPower.value}, скорость ${_baudRate.value}")
         }
     }
 
     private fun handleWriteResponse() {
         addLogEntry("RX", "Параметры успешно записаны")
+        pendingSettings = null // сбрасываем, чтобы следующее чтение не пыталось отправить снова
+        viewModelScope.launch {
+            delay(500) // небольшая задержка для применения настроек ридером
+            readDeviceParams()
+        }
     }
 
     // ------------------ Вспомогательные функции ------------------
@@ -239,7 +257,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val time = dateFormatter.format(Date())
         val entry = "[$time][$prefix] $message\n"
 
-        // Обновляем UI в главном потоке
         viewModelScope.launch(Dispatchers.Main) {
             val lines = logData.lines()
             logData = if (lines.size > 200) {
@@ -249,7 +266,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
         }
 
-        // Сохраняем в файл (для кнопки "Поделиться логом")
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val context = getApplication<Application>()

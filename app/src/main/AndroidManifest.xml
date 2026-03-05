@@ -54,6 +54,10 @@
             android:name=".Test2Activity"
             android:exported="false" />
 
+        <activity
+            android:name=".InstructionActivity"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"

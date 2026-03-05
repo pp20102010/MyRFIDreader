@@ -14,16 +14,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Nfc
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,6 +31,7 @@ import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -40,6 +41,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,11 +51,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.myrfidreader.ui.theme.MyRFIDreaderTheme
 import java.io.File
+
 
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,20 +86,28 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     var selectedWorkMode by remember { mutableIntStateOf(viewModel.workMode.value) }
 
     val logLines = viewModel.logData.split("\n").filter { it.isNotBlank() }.reversed()
+    val filterTime by viewModel.filterTime.collectAsState()
+    val buzzerEnabled by viewModel.buzzerEnabled.collectAsState()
+
+    var selectedFilterTime by remember { mutableIntStateOf(filterTime) }
+    var selectedBuzzer by remember { mutableStateOf(buzzerEnabled) }
+
+    LaunchedEffect(filterTime) {
+        selectedFilterTime = filterTime
+    }
+    LaunchedEffect(buzzerEnabled) {
+        selectedBuzzer = buzzerEnabled
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.Nfc,
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Настройки ридера")
+                    Text("Настройки ридера")
+                },
+                navigationIcon = {
+                    IconButton(onClick = { (context as? SettingsActivity)?.finish() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -171,9 +184,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                 Slider(
                     value = rfPower.toFloat(),
                     onValueChange = { rfPower = it.toInt() },
-                    valueRange = 0f..26f,
-                    steps = 25,
-                    modifier = Modifier.fillMaxWidth()
+                    valueRange = 0f..30f, // Изменено на 30
+                    steps = 29,            // 30 - 0 - 1 = 29 шагов между делениями
+                    // ...
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -210,6 +223,43 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     }
                 }
 
+                // Чекбокс для зуммера
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = selectedBuzzer,
+                        onCheckedChange = { selectedBuzzer = it }
+                    )
+                    Text("Включить зуммер")
+                }
+
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Поле ввода FilterTime
+                OutlinedTextField(
+                    value = selectedFilterTime.toString(),
+                    onValueChange = { newValue ->
+                        // Разрешаем временно пустую строку (чтобы можно было стереть всё)
+                        if (newValue.isEmpty()) {
+                            selectedFilterTime = 0
+                            return@OutlinedTextField
+                        }
+                        // Проверяем, что строка состоит только из цифр и число в допустимом диапазоне
+                        val intValue = newValue.toIntOrNull()
+                        if (intValue != null && intValue in 0..255) {
+                            selectedFilterTime = intValue
+                        }
+                        // Если введено что-то недопустимое (буквы, спецсимволы), просто игнорируем
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    label = { Text("Периодичность считывания (сек)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = selectedFilterTime !in 0..255
+                )
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // === Кнопки управления в две строки (2x2) ===
@@ -222,7 +272,15 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Button(
-                            onClick = { viewModel.applySettings(selectedBaudRate, rfPower, selectedWorkMode) },
+                            onClick = {
+                                viewModel.applySettings(
+                                    selectedBaudRate,
+                                    rfPower,
+                                    selectedWorkMode,
+                                    selectedFilterTime,
+                                    selectedBuzzer
+                                )
+                            },
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Применить")
@@ -265,9 +323,18 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                                         putExtra(Intent.EXTRA_STREAM, contentUri)
                                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                     }
-                                    context.startActivity(Intent.createChooser(shareIntent, "Отправить лог настроек через..."))
+                                    context.startActivity(
+                                        Intent.createChooser(
+                                            shareIntent,
+                                            "Отправить лог настроек через..."
+                                        )
+                                    )
                                 } catch (e: Exception) {
-                                    Toast.makeText(context, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(
+                                        context,
+                                        "Ошибка: ${e.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
@@ -316,3 +383,4 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
         }
     }
 }
+

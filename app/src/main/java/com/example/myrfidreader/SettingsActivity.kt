@@ -1,12 +1,12 @@
 package com.example.myrfidreader
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,7 +35,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -57,7 +56,6 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.myrfidreader.ui.theme.MyRFIDreaderTheme
 import java.io.File
-
 
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,30 +79,38 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     val context = LocalContext.current
     val isConnected by UsbConnectionHolder.isConnected
 
-    var selectedBaudRate by remember { mutableIntStateOf(viewModel.baudRate.value) }
-    var rfPower by remember { mutableIntStateOf(viewModel.rfPower.value) }
-    var selectedWorkMode by remember { mutableIntStateOf(viewModel.workMode.value) }
+    // Состояния из ViewModel
+    val baudRateState by viewModel.baudRate.collectAsState()
+    val rfPowerState by viewModel.rfPower.collectAsState()
+    val workModeState by viewModel.workMode.collectAsState()
+    val filterTimeState by viewModel.filterTime.collectAsState()
+    val buzzerEnabledState by viewModel.buzzerEnabled.collectAsState()
+
+    // Локальные переменные для редактирования
+    var selectedBaudRate by remember { mutableIntStateOf(baudRateState) }
+    var rfPower by remember { mutableIntStateOf(rfPowerState) }
+    var selectedWorkMode by remember { mutableIntStateOf(workModeState) }
+    var selectedFilterTime by remember { mutableIntStateOf(filterTimeState) }
+    var selectedBuzzer by remember { mutableStateOf(buzzerEnabledState) }
+
+    // Состояния для раскрытия выпадающих списков
+    var expandedBaud by remember { mutableStateOf(false) }
+    var expandedPower by remember { mutableStateOf(false) }
+    var expandedMode by remember { mutableStateOf(false) }
+
+    // Синхронизация локальных переменных с состояниями ViewModel
+    LaunchedEffect(baudRateState) { selectedBaudRate = baudRateState }
+    LaunchedEffect(rfPowerState) { rfPower = rfPowerState }
+    LaunchedEffect(workModeState) { selectedWorkMode = workModeState }
+    LaunchedEffect(filterTimeState) { selectedFilterTime = filterTimeState }
+    LaunchedEffect(buzzerEnabledState) { selectedBuzzer = buzzerEnabledState }
 
     val logLines = viewModel.logData.split("\n").filter { it.isNotBlank() }.reversed()
-    val filterTime by viewModel.filterTime.collectAsState()
-    val buzzerEnabled by viewModel.buzzerEnabled.collectAsState()
-
-    var selectedFilterTime by remember { mutableIntStateOf(filterTime) }
-    var selectedBuzzer by remember { mutableStateOf(buzzerEnabled) }
-
-    LaunchedEffect(filterTime) {
-        selectedFilterTime = filterTime
-    }
-    LaunchedEffect(buzzerEnabled) {
-        selectedBuzzer = buzzerEnabled
-    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("Настройки ридера")
-                },
+                title = { Text("Настройки ридера") },
                 navigationIcon = {
                     IconButton(onClick = { (context as? SettingsActivity)?.finish() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
@@ -119,8 +125,8 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     ) { paddingValues ->
         Column(
             modifier = Modifier
-                .fillMaxSize()
                 .padding(paddingValues)
+                .fillMaxSize()
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -145,85 +151,142 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     }
                 }
             } else {
-                // === Скорость (Baud rate) ===
-                var expandedBaud by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expandedBaud,
-                    onExpandedChange = { expandedBaud = it }
+                // ===== Строка 1: Скорость и Мощность =====
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = baudRateToString(selectedBaudRate),
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Скорость") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedBaud) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor()
-                    )
-                    DropdownMenu(
-                        expanded = expandedBaud,
-                        onDismissRequest = { expandedBaud = false }
-                    ) {
-                        listOf(0, 1, 2, 3, 4).forEach { value ->
-                            DropdownMenuItem(
-                                text = { Text(baudRateToString(value)) },
-                                onClick = {
-                                    selectedBaudRate = value
-                                    expandedBaud = false
-                                }
+                    // Скорость (выпадающий список)
+                    Box(modifier = Modifier.weight(1f)) {
+                        ExposedDropdownMenuBox(
+                            expanded = expandedBaud,
+                            onExpandedChange = { expandedBaud = it }
+                        ) {
+                            OutlinedTextField(
+                                value = baudRateToString(selectedBaudRate),
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Скорость") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedBaud) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
                             )
+                            DropdownMenu(
+                                expanded = expandedBaud,
+                                onDismissRequest = { expandedBaud = false }
+                            ) {
+                                listOf(0, 1, 2, 3, 4).forEach { value ->
+                                    DropdownMenuItem(
+                                        text = { Text(baudRateToString(value)) },
+                                        onClick = {
+                                            selectedBaudRate = value
+                                            expandedBaud = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Мощность (выпадающий список 1..30)
+                    Box(modifier = Modifier.weight(1f)) {
+                        ExposedDropdownMenuBox(
+                            expanded = expandedPower,
+                            onExpandedChange = { expandedPower = it }
+                        ) {
+                            OutlinedTextField(
+                                value = "$rfPower dB",
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Мощность") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPower) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
+                            )
+                            DropdownMenu(
+                                expanded = expandedPower,
+                                onDismissRequest = { expandedPower = false }
+                            ) {
+                                (1..30).forEach { value ->
+                                    DropdownMenuItem(
+                                        text = { Text("$value dB") },
+                                        onClick = {
+                                            rfPower = value
+                                            expandedPower = false
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // === Мощность (RF Power) ===
-                Text("Мощность: $rfPower dB")
-                Slider(
-                    value = rfPower.toFloat(),
-                    onValueChange = { rfPower = it.toInt() },
-                    valueRange = 0f..30f, // Изменено на 30
-                    steps = 29,            // 30 - 0 - 1 = 29 шагов между делениями
-                    // ...
-                )
+                // ===== Строка 2: Режим и Периодичность =====
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Режим (выпадающий список) - краткое название
+                    Box(modifier = Modifier.weight(1f)) {
+                        ExposedDropdownMenuBox(
+                            expanded = expandedMode,
+                            onExpandedChange = { expandedMode = it }
+                        ) {
+                            OutlinedTextField(
+                                value = workModeShortToString(selectedWorkMode), // краткое
+                                onValueChange = {},
+                                readOnly = true,
+                                label = { Text("Режим") },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMode) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor()
+                            )
+                            DropdownMenu(
+                                expanded = expandedMode,
+                                onDismissRequest = { expandedMode = false }
+                            ) {
+                                listOf(0, 1, 2).forEach { value ->
+                                    DropdownMenuItem(
+                                        text = { Text(workModeFullToString(value)) }, // полное
+                                        onClick = {
+                                            selectedWorkMode = value
+                                            expandedMode = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Периодичность (поле ввода)
+                    OutlinedTextField(
+                        value = selectedFilterTime.toString(),
+                        onValueChange = { newValue ->
+                            if (newValue.isEmpty()) {
+                                selectedFilterTime = 0
+                                return@OutlinedTextField
+                            }
+                            val intValue = newValue.toIntOrNull()
+                            if (intValue != null && intValue in 0..255) {
+                                selectedFilterTime = intValue
+                            }
+                        },
+                        label = { Text("Периодичность (сек)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                        isError = selectedFilterTime !in 0..255
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // === Режим работы (Work Mode) ===
-                var expandedMode by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(
-                    expanded = expandedMode,
-                    onExpandedChange = { expandedMode = it }
-                ) {
-                    OutlinedTextField(
-                        value = workModeToString(selectedWorkMode),
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Режим") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMode) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor()
-                    )
-                    DropdownMenu(
-                        expanded = expandedMode,
-                        onDismissRequest = { expandedMode = false }
-                    ) {
-                        listOf(0, 1, 2).forEach { value ->
-                            DropdownMenuItem(
-                                text = { Text(workModeToString(value)) },
-                                onClick = {
-                                    selectedWorkMode = value
-                                    expandedMode = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                // Чекбокс для зуммера
+                // ===== Чекбокс зуммера =====
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -235,38 +298,14 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                     Text("Включить зуммер")
                 }
 
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Поле ввода FilterTime
-                OutlinedTextField(
-                    value = selectedFilterTime.toString(),
-                    onValueChange = { newValue ->
-                        // Разрешаем временно пустую строку (чтобы можно было стереть всё)
-                        if (newValue.isEmpty()) {
-                            selectedFilterTime = 0
-                            return@OutlinedTextField
-                        }
-                        // Проверяем, что строка состоит только из цифр и число в допустимом диапазоне
-                        val intValue = newValue.toIntOrNull()
-                        if (intValue != null && intValue in 0..255) {
-                            selectedFilterTime = intValue
-                        }
-                        // Если введено что-то недопустимое (буквы, спецсимволы), просто игнорируем
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    label = { Text("Периодичность считывания (сек)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    isError = selectedFilterTime !in 0..255
-                )
-
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // === Кнопки управления в две строки (2x2) ===
+                // ===== Кнопки управления =====
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    // Строка 1: Применить и Очистить лог
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -286,22 +325,24 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                             Text("Применить")
                         }
                         Button(
-                            onClick = { viewModel.readSettings() },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Прочитать")
-                        }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Button(
                             onClick = { viewModel.clearLog() },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("Очистить лог")
+                        }
+                    }
+
+                    // Строка 2: Прочитать и Отправить лог
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.readSettings() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Прочитать")
                         }
                         Button(
                             onClick = {
@@ -313,7 +354,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                                 try {
                                     val file = File(context.filesDir, "settings_log.txt")
                                     file.writeText(logContent)
-                                    val contentUri: Uri = FileProvider.getUriForFile(
+                                    val contentUri = FileProvider.getUriForFile(
                                         context,
                                         "${context.packageName}.provider",
                                         file
@@ -323,18 +364,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
                                         putExtra(Intent.EXTRA_STREAM, contentUri)
                                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                     }
-                                    context.startActivity(
-                                        Intent.createChooser(
-                                            shareIntent,
-                                            "Отправить лог настроек через..."
-                                        )
-                                    )
+                                    context.startActivity(Intent.createChooser(shareIntent, "Отправить лог настроек через..."))
                                 } catch (e: Exception) {
-                                    Toast.makeText(
-                                        context,
-                                        "Ошибка: ${e.message}",
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                    Toast.makeText(context, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
@@ -347,7 +379,7 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // === Заголовок лога ===
+                // ===== Лог команд и ответов =====
                 Text(
                     text = "Лог команд и ответов:",
                     style = MaterialTheme.typography.labelLarge,
@@ -356,7 +388,6 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-                // === Лог, занимающий всё оставшееся пространство ===
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -384,3 +415,18 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     }
 }
 
+// Полное название для выпадающего меню
+fun workModeFullToString(value: Int): String = when (value) {
+    0 -> "Answer (опрос)"
+    1 -> "Active (постоянно)"
+    2 -> "Trigger (триггер)"
+    else -> "Неизвестно"
+}
+
+// Краткое название для отображения в свёрнутом поле
+fun workModeShortToString(value: Int): String = when (value) {
+    0 -> "Answer"
+    1 -> "Active"
+    2 -> "Trigger"
+    else -> "Неизвестно"
+}

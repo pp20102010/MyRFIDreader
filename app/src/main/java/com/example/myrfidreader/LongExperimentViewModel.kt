@@ -68,7 +68,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     private val _totalIntervals = MutableStateFlow(0)
     val totalIntervals: StateFlow<Int> = _totalIntervals
 
-    private var currentIntervalReadings = mutableListOf<Pair<String, Int>>()
+    private var currentIntervalReadings = mutableListOf<Triple<String, Int, Long>>()
     private var intervalIndex = 0
     private var experimentStartTime = 0L
 
@@ -177,8 +177,10 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             _totalIntervals.value = intervalIndex
 
             val intervalStats = mutableMapOf<String, MutableList<Int>>()
-            for ((epc, rssi) in currentIntervalReadings) {
+            for ((epc, rssi, time) in currentIntervalReadings) {
                 intervalStats.getOrPut(epc) { mutableListOf() }.add(rssi)
+                // Запись в файл с конкретным временем
+                writeToFile("${formatDate(time)};$epc;$rssi")
             }
 
             val currentStats = _statsList.value.toMutableList()
@@ -204,12 +206,12 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             }
             _statsList.value = currentStats.sortedByDescending { it.sumCount }
 
-            val intervalTime = System.currentTimeMillis()
-            for ((epc, rssiList) in intervalStats) {
-                for (rssi in rssiList) {
-                    writeToFile("${formatDate(intervalTime)};$epc;$rssi")
-                }
-            }
+//            val intervalTime = System.currentTimeMillis()
+//            for ((epc, rssiList) in intervalStats) {
+//                for (rssi in rssiList) {
+//                    writeToFile("${formatDate(intervalTime)};$epc;$rssi")
+//                }
+//            }
 
             elapsed = System.currentTimeMillis() - startTime
             if (elapsed + pauseMs + intervalMs <= totalDurationMs) {
@@ -309,7 +311,8 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
                 val epcBytes = tagData.copyOfRange(2, tagData.size - 1)
                 val epcHex = epcBytes.joinToString("") { "%02X".format(it) }
                 val rssi = tagData[tagData.size - 1].toInt() and 0xFF
-                currentIntervalReadings.add(epcHex to rssi)
+                val now = System.currentTimeMillis()
+                currentIntervalReadings.add(Triple(epcHex, rssi, now))
                 pos += 1 + tagLen
             }
         } else {
@@ -325,7 +328,8 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
                 val epcBytes = tagData.copyOfRange(2, tagData.size - 1)
                 val epcHex = epcBytes.joinToString("") { "%02X".format(it) }
                 val rssi = tagData[tagData.size - 1].toInt() and 0xFF
-                currentIntervalReadings.add(epcHex to rssi)
+                val now = System.currentTimeMillis()
+                currentIntervalReadings.add(Triple(epcHex, rssi, now))
                 pos += 1 + tagLen
             }
         }

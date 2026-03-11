@@ -23,6 +23,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -166,7 +167,7 @@ fun Test2Screen(viewModel: Test2ViewModel = viewModel()) {
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDuration) },
                             modifier = Modifier
                                 .width(120.dp)
-                                .menuAnchor()
+                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                         )
                         DropdownMenu(
                             expanded = expandedDuration,

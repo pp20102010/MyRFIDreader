@@ -125,6 +125,19 @@ fun LauncherScreen() {
             ) {
                 Text("Провести тест 2")
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = {
+                    context.startActivity(Intent(context, LongExperimentActivity::class.java))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Длительный эксперимент")
+            }
+
+
             Spacer(modifier = Modifier.height(16.dp))
 
             Button(

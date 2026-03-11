@@ -28,13 +28,13 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -83,6 +83,9 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     val statsList by viewModel.statsList.collectAsState()
     val experimentNumber by viewModel.experimentNumber.collectAsState()
     val totalIntervals by viewModel.totalIntervals.collectAsState()
+
+    // Cостояние подключения ридера
+    val isConnected by UsbConnectionHolder.isConnected
 
     // Состояния выпадающих списков
     var expandedZone by remember { mutableStateOf(false) }
@@ -158,7 +161,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 label = { Text("№") },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 56.dp) // вместо фиксированной высоты
+                                    .defaultMinSize(minHeight = 48.dp) // вместо фиксированной высоты
                             )
                         }
 
@@ -173,11 +176,12 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     onValueChange = {},
                                     readOnly = true,
                                     label = { Text("Длит.") },
+                                    textStyle = MaterialTheme.typography.bodySmall,
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDuration) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 56.dp)
-                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
                                     expanded = expandedDuration,
@@ -208,11 +212,12 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     onValueChange = {},
                                     readOnly = true,
                                     label = { Text("Инт.") },
+                                    textStyle = MaterialTheme.typography.bodySmall,
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedInterval) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 56.dp)
-                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
                                     expanded = expandedInterval,
@@ -253,8 +258,8 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedZone) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 56.dp)
-                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
                                     expanded = expandedZone,
@@ -287,8 +292,8 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMounting) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 56.dp)
-                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
                                     expanded = expandedMounting,
@@ -318,11 +323,12 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     onValueChange = {},
                                     readOnly = true,
                                     label = { Text("Загр.") },
+                                    textStyle = MaterialTheme.typography.bodySmall,
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPollution) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 56.dp)
-                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
                                     expanded = expandedPollution,
@@ -363,8 +369,8 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDistance) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 56.dp)
-                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
                                     expanded = expandedDistance,
@@ -397,8 +403,8 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedAngle) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 56.dp)
-                                        .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
                                     expanded = expandedAngle,
@@ -483,23 +489,30 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                     ) {
                         Button(
                             onClick = {
-                                // Применяем выбранные значения к ViewModel
-                                viewModel.updateZone(selectedZone)
-                                viewModel.updateMounting(selectedMounting)
-                                viewModel.updateDistance(selectedDistance)
-                                viewModel.updateAngle(selectedAngle)
-                                viewModel.updatePollution(selectedPollution)
-                                viewModel.updateDuration(selectedDuration)
-                                viewModel.updateInterval(selectedInterval)
-                                viewModel.startExperiment()
+                                if (isExperimentRunning) {
+                                    viewModel.stopExperiment()
+                                } else {
+                                    // Применяем выбранные значения к ViewModel
+                                    viewModel.updateZone(selectedZone)
+                                    viewModel.updateMounting(selectedMounting)
+                                    viewModel.updateDistance(selectedDistance)
+                                    viewModel.updateAngle(selectedAngle)
+                                    viewModel.updatePollution(selectedPollution)
+                                    viewModel.updateDuration(selectedDuration)
+                                    viewModel.updateInterval(selectedInterval)
+                                    viewModel.startExperiment()
+                                }
                             },
-                            enabled = !isExperimentRunning && viewModel.isInputValid()
+                            enabled = isConnected, // активна всегда при подключении
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isExperimentRunning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            )
                         ) {
-                            Text("Пуск")
+                            Text(if (isExperimentRunning) "Стоп" else "Пуск")
                         }
+                        Text("Инт: $totalIntervals")
                         Text("Время: %.1f с".format(currentTime))
                     }
-
                     Spacer(modifier = Modifier.height(8.dp))
 
                     if (statsList.isNotEmpty()) {

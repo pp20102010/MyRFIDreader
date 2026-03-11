@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,7 +34,9 @@ data class EPCStats(
     var rssiCount: Int = 0
 ) {
     val avgRssi: Double get() = if (rssiCount > 0) totalRssi.toDouble() / rssiCount else 0.0
-    fun avgCount(intervals: Int): Double = if (intervals > 0) sumCount.toDouble() / intervals else 0.0
+    fun avgCount(intervals: Int): Double =
+        if (intervals > 0) sumCount.toDouble() / intervals else 0.0
+
     fun stdDev(intervals: Int): Double {
         if (intervals <= 1) return 0.0
         val mean = avgCount(intervals)
@@ -41,7 +44,8 @@ data class EPCStats(
     }
 }
 
-class LongExperimentViewModel(application: Application) : AndroidViewModel(application), OnDataReceivedListener {
+class LongExperimentViewModel(application: Application) : AndroidViewModel(application),
+    OnDataReceivedListener {
 
     val experimentNumber = MutableStateFlow(1)
     var zone by mutableStateOf("А"); private set
@@ -68,7 +72,10 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     private var intervalIndex = 0
     private var experimentStartTime = 0L
 
-    private val prefs: SharedPreferences = application.getSharedPreferences("long_exp_prefs", Context.MODE_PRIVATE)
+    private var timerJob: Job? = null
+
+    private val prefs: SharedPreferences =
+        application.getSharedPreferences("long_exp_prefs", Context.MODE_PRIVATE)
     private val dateFormatter = SimpleDateFormat("MMdd HH:mm:ss.SSS", Locale.getDefault())
     private val file = File(application.filesDir, "experiment_log.txt")
     private val incomingBuffer = mutableListOf<Byte>()
@@ -78,13 +85,33 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         UsbDataDispatcher.registerListener(this)
     }
 
-    fun updateZone(value: String) { zone = value }
-    fun updateMounting(value: String) { mounting = value }
-    fun updateDistance(value: Double) { distance = value }
-    fun updateAngle(value: Int) { angle = value }
-    fun updatePollution(value: String) { pollution = value }
-    fun updateDuration(value: Int) { duration = value }
-    fun updateInterval(value: Double) { interval = value }
+    fun updateZone(value: String) {
+        zone = value
+    }
+
+    fun updateMounting(value: String) {
+        mounting = value
+    }
+
+    fun updateDistance(value: Double) {
+        distance = value
+    }
+
+    fun updateAngle(value: Int) {
+        angle = value
+    }
+
+    fun updatePollution(value: String) {
+        pollution = value
+    }
+
+    fun updateDuration(value: Int) {
+        duration = value
+    }
+
+    fun updateInterval(value: Double) {
+        interval = value
+    }
 
     fun isInputValid(): Boolean = true
 
@@ -104,10 +131,27 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             writeToFile("Номер эксперимента: ${experimentNumber.value};Зона: $zone;Крепление: $mounting;Расстояние: $distance;Угол: $angle;Загрязнение: $pollution;Длительность: $duration;Интервал: $interval")
         }
 
+        // Запуск таймера для обновления времени каждую секунду
+        timerJob = viewModelScope.launch {
+            while (_isExperimentRunning.value) {
+                _currentTime.value = (System.currentTimeMillis() - experimentStartTime) / 1000.0
+                delay(1000)
+            }
+        }
+
         viewModelScope.launch { runExperiment() }
     }
 
-    fun stopExperiment() { _isExperimentRunning.value = false }
+    // Метод для остановки эксперимента
+    fun stopExperiment() {
+        if (!_isExperimentRunning.value) return
+        _isExperimentRunning.value = false
+        timerJob?.cancel()
+        viewModelScope.launch {
+            writeToFile("${formatDate()}; серия прервана пользователем")
+            writeToFile("")
+        }
+    }
 
     private suspend fun runExperiment() {
         val totalDurationMs = (duration * 1000).toLong()
@@ -117,6 +161,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         var elapsed: Long
 
         while (true) {
+            if (!_isExperimentRunning.value) break
             elapsed = System.currentTimeMillis() - startTime
             if (elapsed + intervalMs > totalDurationMs) break
 
@@ -178,22 +223,33 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             } else {
                 break
             }
+            _currentTime.value = (System.currentTimeMillis() - startTime) / 1000.0
         }
 
-        _isExperimentRunning.value = false
-        viewModelScope.launch {
-            writeToFile("Эксперимент завершен, количество интервалов чтения - ${_totalIntervals.value}")
-            writeToFile("Номер эксперимента: ${experimentNumber.value};Зона: $zone;Крепление: $mounting;Расстояние: $distance;Угол: $angle;Загрязнение: $pollution;Длительность: $duration;Интервал: $interval")
-            writeToFile("Итоговая статистика:")
-            _statsList.value.forEach { stat ->
-                val avg = stat.avgCount(_totalIntervals.value)
-                val std = stat.stdDev(_totalIntervals.value)
-                writeToFile("EPC: ${stat.epc}; N=%.2f; S=%.2f; min=${stat.minCount}; Z=${stat.zeroIntervals}; RSSI=%.1f".format(avg, std, stat.avgRssi))
+        if (_isExperimentRunning.value) {
+            _isExperimentRunning.value = false
+            timerJob?.cancel() // остановка таймера
+
+            viewModelScope.launch {
+                writeToFile("Эксперимент завершен, количество интервалов чтения - ${_totalIntervals.value}")
+                writeToFile("Номер эксперимента: ${experimentNumber.value};Зона: $zone;Крепление: $mounting;Расстояние: $distance;Угол: $angle;Загрязнение: $pollution;Длительность: $duration;Интервал: $interval")
+                writeToFile("Итоговая статистика:")
+                _statsList.value.forEach { stat ->
+                    val avg = stat.avgCount(_totalIntervals.value)
+                    val std = stat.stdDev(_totalIntervals.value)
+                    writeToFile(
+                        "EPC: ${stat.epc}; N=%.2f; S=%.2f; min=${stat.minCount}; Z=${stat.zeroIntervals}; RSSI=%.1f".format(
+                            avg,
+                            std,
+                            stat.avgRssi
+                        )
+                    )
+                }
+                writeToFile("")
             }
-            writeToFile("")
+            experimentNumber.value++
+            prefs.edit().putInt("last_exp_number", experimentNumber.value).apply()
         }
-        experimentNumber.value++
-        prefs.edit().putInt("last_exp_number", experimentNumber.value).apply()
     }
 
     override fun onDataReceived(data: ByteArray) {
@@ -209,7 +265,8 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             if (headerIndex > 0) incomingBuffer.subList(0, headerIndex).clear()
             if (incomingBuffer.size < 8) break
 
-            val length = ((incomingBuffer[2].toInt() and 0xFF) shl 8) or (incomingBuffer[3].toInt() and 0xFF)
+            val length =
+                ((incomingBuffer[2].toInt() and 0xFF) shl 8) or (incomingBuffer[3].toInt() and 0xFF)
             val totalPacketLen = 4 + length
             if (incomingBuffer.size < totalPacketLen) break
 
@@ -277,7 +334,9 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     private fun findHeader(buffer: List<Byte>, header: ByteArray): Int {
         for (i in 0 until buffer.size - header.size + 1) {
             var match = true
-            for (j in header.indices) if (buffer[i + j] != header[j]) { match = false; break }
+            for (j in header.indices) if (buffer[i + j] != header[j]) {
+                match = false; break
+            }
             if (match) return i
         }
         return -1
@@ -289,14 +348,17 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         return ((sum.inv() + 1) and 0xFF).toByte()
     }
 
-    private fun formatDate(time: Long = System.currentTimeMillis()): String = dateFormatter.format(Date(time))
+    private fun formatDate(time: Long = System.currentTimeMillis()): String =
+        dateFormatter.format(Date(time))
 
     private fun writeToFile(line: String) {
         viewModelScope.launch {
             try {
                 if (!file.exists()) file.createNewFile()
                 FileOutputStream(file, true).use { it.write((line + "\n").toByteArray()) }
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 

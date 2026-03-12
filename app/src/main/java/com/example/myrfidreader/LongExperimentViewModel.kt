@@ -1,3 +1,4 @@
+// LongExperimentViewModel.kt
 package com.example.myrfidreader
 
 import android.app.Application
@@ -34,6 +35,10 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     var pollution by mutableStateOf("нет"); private set
     var duration by mutableStateOf(100); private set
     var interval by mutableStateOf(2.0); private set
+    var protocolType by mutableStateOf("итоги") // "итоги" или "полный"
+        private set
+    var note by mutableStateOf("") // примечание, свободный текст
+        private set
 
     private val _isExperimentRunning = MutableStateFlow(false)
     val isExperimentRunning: StateFlow<Boolean> = _isExperimentRunning
@@ -49,7 +54,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
 
     // Счетчики для текущего интервала (EPC -> количество считываний)
     private var intervalEpcCounts = mutableMapOf<String, Int>()
-    // Для записи строк интервала (будем накапливать и записывать одной пачкой)
+    // Для записи строк интервала (будем накапливать и записывать одной пачкой) – только в полном режиме
     private var intervalLines = mutableListOf<String>()
 
     private var intervalIndex = 0
@@ -77,13 +82,14 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     fun updatePollution(value: String) { pollution = value }
     fun updateDuration(value: Int) { duration = value }
     fun updateInterval(value: Double) { interval = value }
+    fun updateProtocolType(value: String) { protocolType = value }
+    fun updateNote(value: String) { note = value }
 
     fun isInputValid(): Boolean = true
 
     fun startExperiment() {
         if (_isExperimentRunning.value) return
 
-        // Закрываем предыдущий поток, если был открыт
         closeFileStream()
 
         try {
@@ -103,13 +109,9 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         intervalLines.clear()
         _statsList.value = emptyList()
 
-        // Заголовки записываем сразу
-        val headerLines = listOf(
-            "Начало эксперимента;${formatDate()}",
-            "Номер эксперимента: ${experimentNumber.value};Зона: $zone;Крепление: $mounting;Расстояние: $distance;Угол: $angle;Загрязнение: $pollution;Длительность: $duration;Интервал: $interval"
-        )
-        // Синхронная запись (ждём завершения)
-        viewModelScope.launch { writeLinesSync(headerLines) }
+        // Новая строка начала серии
+        val headerLine = "Эксперимент серия: ${experimentNumber.value} ;начат ;${formatDate()}"
+        viewModelScope.launch { writeLinesSync(listOf(headerLine)) }
 
         timerJob = viewModelScope.launch {
             while (_isExperimentRunning.value) {
@@ -126,9 +128,12 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         _isExperimentRunning.value = false
         timerJob?.cancel()
         viewModelScope.launch {
-            // Записываем последний интервал (если есть)
-            flushInterval()
-            writeLinesSync(listOf("${formatDate()}; серия прервана пользователем", ""))
+            // Если был полный режим, записываем остатки интервала
+            if (protocolType == "полный") {
+                flushInterval()
+            }
+            val abortLine = "Эксперимент серия: ${experimentNumber.value} ;прерван пользователем ;${formatDate()} ;"
+            writeLinesSync(listOf(abortLine, ""))
             closeFileStream()
         }
     }
@@ -178,7 +183,9 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
 
             // Начало нового интервала
             intervalEpcCounts.clear()
-            intervalLines.clear()
+            if (protocolType == "полный") {
+                intervalLines.clear()
+            }
             val readingStart = System.currentTimeMillis()
             val readingEndTime = readingStart + intervalMs
 
@@ -189,7 +196,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             intervalIndex++
             _totalIntervals.value = intervalIndex
 
-            // Обработка накопленных счетчиков интервала (количество считываний)
+            // Обработка накопленных счетчиков интервала (количество считываний) – всегда
             val currentStats = _statsList.value.toMutableList()
             for ((epc, count) in intervalEpcCounts) {
                 var stat = currentStats.find { it.epc == epc }
@@ -205,14 +212,16 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             }
             _statsList.value = currentStats.sortedByDescending { it.sumCount }
 
-            // Записываем накопленные строки интервала (все считанные значения с временем)
-            if (intervalLines.isNotEmpty()) {
+            // Если полный режим – записываем накопленные строки интервала
+            if (protocolType == "полный" && intervalLines.isNotEmpty()) {
                 writeLinesSync(intervalLines)
             }
 
             elapsed = System.currentTimeMillis() - startTime
             if (elapsed + pauseMs + intervalMs <= totalDurationMs) {
-                writeLinesSync(listOf("${formatDate()};пауза считывания"))
+                if (protocolType == "полный") {
+                    writeLinesSync(listOf("${formatDate()};пауза считывания"))
+                }
                 delay(pauseMs)
             } else {
                 break
@@ -224,10 +233,10 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             _isExperimentRunning.value = false
             timerJob?.cancel()
 
-            // Финальная статистика
+            // Финальная статистика (всегда)
             val summaryLines = mutableListOf<String>()
-            summaryLines.add("Эксперимент завершен, количество интервалов чтения - ${_totalIntervals.value}")
-            summaryLines.add("Номер эксперимента: ${experimentNumber.value};Зона: $zone;Крепление: $mounting;Расстояние: $distance;Угол: $angle;Загрязнение: $pollution;Длительность: $duration;Интервал: $interval")
+            val finishLine = "Эксперимент серия: ${experimentNumber.value} ;завершен ;${formatDate()} ; Зона: $zone; Крепление: $mounting; Расстояние: $distance; Угол: $angle; Загрязнение: $pollution; Длительность: $duration; Интервал: $interval; Примечание: $note"
+            summaryLines.add(finishLine)
             summaryLines.add("Итоговая статистика:")
             _statsList.value.forEach { stat ->
                 val totalInt = _totalIntervals.value
@@ -306,8 +315,10 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
                 val rssi = tagData[tagData.size - 1].toInt() and 0xFF
                 val now = System.currentTimeMillis()
 
-                // Сохраняем строку для записи в конце интервала
-                intervalLines.add("${formatDate(now)};$epcHex;$rssi")
+                // Если полный режим – сохраняем строку для записи в конце интервала
+                if (protocolType == "полный") {
+                    intervalLines.add("${formatDate(now)};$epcHex;$rssi")
+                }
 
                 // Обновляем счетчик интервала
                 intervalEpcCounts[epcHex] = (intervalEpcCounts[epcHex] ?: 0) + 1
@@ -341,7 +352,9 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
                 val rssi = tagData[tagData.size - 1].toInt() and 0xFF
                 val now = System.currentTimeMillis()
 
-                intervalLines.add("${formatDate(now)};$epcHex;$rssi")
+                if (protocolType == "полный") {
+                    intervalLines.add("${formatDate(now)};$epcHex;$rssi")
+                }
 
                 intervalEpcCounts[epcHex] = (intervalEpcCounts[epcHex] ?: 0) + 1
 

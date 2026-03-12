@@ -78,14 +78,12 @@ class LongExperimentActivity : ComponentActivity() {
 @Composable
 fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     val context = LocalContext.current
+    val isConnected by UsbConnectionHolder.isConnected
     val isExperimentRunning by viewModel.isExperimentRunning.collectAsState()
     val currentTime by viewModel.currentTime.collectAsState()
     val statsList by viewModel.statsList.collectAsState()
     val experimentNumber by viewModel.experimentNumber.collectAsState()
     val totalIntervals by viewModel.totalIntervals.collectAsState()
-
-    // Cостояние подключения ридера
-    val isConnected by UsbConnectionHolder.isConnected
 
     // Состояния выпадающих списков
     var expandedZone by remember { mutableStateOf(false) }
@@ -95,6 +93,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     var expandedPollution by remember { mutableStateOf(false) }
     var expandedDuration by remember { mutableStateOf(false) }
     var expandedInterval by remember { mutableStateOf(false) }
+    var expandedProtocolType by remember { mutableStateOf(false) }
 
     // Локальные переменные для редактирования
     var selectedZone by remember { mutableStateOf(viewModel.zone) }
@@ -104,6 +103,8 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     var selectedPollution by remember { mutableStateOf(viewModel.pollution) }
     var selectedDuration by remember { mutableIntStateOf(viewModel.duration) }
     var selectedInterval by remember { mutableDoubleStateOf(viewModel.interval) }
+    var selectedProtocolType by remember { mutableStateOf(viewModel.protocolType) }
+    var selectedNote by remember { mutableStateOf(viewModel.note) }
 
     var showClearDialog by remember { mutableStateOf(false) }
 
@@ -114,6 +115,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     val zoneOptions = listOf("А", "Б", "В", "Г", "Д")
     val mountingOptions = listOf("M", "C")
     val pollutionOptions = listOf("нет", "вода", "масло")
+    val protocolTypeOptions = listOf("итоги", "полный")
 
     Scaffold(
         topBar = {
@@ -147,103 +149,24 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                     Text("Параметр серии", style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Строка 1: Номер эксперимента (только чтение), Длительность, Интервал (по 1/3)
+                    // Строка 1: №, Зона, Крепление
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Номер эксперимента
+                        // Номер эксперимента (увеличенный шрифт)
                         Box(modifier = Modifier.weight(1f)) {
                             OutlinedTextField(
                                 value = "%04d".format(experimentNumber),
                                 onValueChange = {},
                                 readOnly = true,
                                 label = { Text("№") },
+                                textStyle = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 48.dp) // вместо фиксированной высоты
+                                    .defaultMinSize(minHeight = 32.dp)
                             )
                         }
-
-                        // Длительность
-                        Box(modifier = Modifier.weight(1f)) {
-                            ExposedDropdownMenuBox(
-                                expanded = expandedDuration,
-                                onExpandedChange = { expandedDuration = it }
-                            ) {
-                                OutlinedTextField(
-                                    value = "$selectedDuration с",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Длит.") },
-                                    textStyle = MaterialTheme.typography.bodySmall,
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDuration) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 48.dp)
-                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                                )
-                                DropdownMenu(
-                                    expanded = expandedDuration,
-                                    onDismissRequest = { expandedDuration = false }
-                                ) {
-                                    durationOptions.forEach { value ->
-                                        DropdownMenuItem(
-                                            text = { Text("$value с") },
-                                            onClick = {
-                                                selectedDuration = value
-                                                expandedDuration = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Интервал
-                        // Интервал
-                        Box(modifier = Modifier.weight(1f)) {
-                            ExposedDropdownMenuBox(
-                                expanded = expandedInterval,
-                                onExpandedChange = { expandedInterval = it }
-                            ) {
-                                OutlinedTextField(
-                                    value = "%.1f с".format(selectedInterval),
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Инт.") },
-                                    textStyle = MaterialTheme.typography.bodySmall,
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedInterval) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 48.dp)
-                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                                )
-                                DropdownMenu(
-                                    expanded = expandedInterval,
-                                    onDismissRequest = { expandedInterval = false }
-                                ) {
-                                    intervalOptions.forEach { value ->
-                                        DropdownMenuItem(
-                                            text = { Text("%.1f с".format(value)) },
-                                            onClick = {
-                                                selectedInterval = value
-                                                expandedInterval = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Строка 2: Зона, Крепление, Загрязнение (по 1/3)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
                         // Зона
                         Box(modifier = Modifier.weight(1f)) {
                             ExposedDropdownMenuBox(
@@ -255,10 +178,11 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     onValueChange = {},
                                     readOnly = true,
                                     label = { Text("Зона") },
+                                    textStyle = MaterialTheme.typography.bodySmall,
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedZone) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 48.dp)
+                                        .defaultMinSize(minHeight = 32.dp)
                                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
@@ -277,7 +201,6 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 }
                             }
                         }
-
                         // Крепление
                         Box(modifier = Modifier.weight(1f)) {
                             ExposedDropdownMenuBox(
@@ -289,10 +212,11 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     onValueChange = {},
                                     readOnly = true,
                                     label = { Text("Креп.") },
+                                    textStyle = MaterialTheme.typography.bodySmall,
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedMounting) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 48.dp)
+                                        .defaultMinSize(minHeight = 32.dp)
                                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
@@ -311,7 +235,194 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 }
                             }
                         }
+                    }
 
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Строка 2: Длит, Инт, Вид
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Длительность
+                        Box(modifier = Modifier.weight(1f)) {
+                            ExposedDropdownMenuBox(
+                                expanded = expandedDuration,
+                                onExpandedChange = { expandedDuration = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = "$selectedDuration с",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Длит.") },
+                                    textStyle = MaterialTheme.typography.bodySmall,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDuration) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 32.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                )
+                                DropdownMenu(
+                                    expanded = expandedDuration,
+                                    onDismissRequest = { expandedDuration = false }
+                                ) {
+                                    durationOptions.forEach { value ->
+                                        DropdownMenuItem(
+                                            text = { Text("$value с") },
+                                            onClick = {
+                                                selectedDuration = value
+                                                expandedDuration = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        // Интервал
+                        Box(modifier = Modifier.weight(1f)) {
+                            ExposedDropdownMenuBox(
+                                expanded = expandedInterval,
+                                onExpandedChange = { expandedInterval = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = "%.1f с".format(selectedInterval),
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Инт.") },
+                                    textStyle = MaterialTheme.typography.bodySmall,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedInterval) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 32.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                )
+                                DropdownMenu(
+                                    expanded = expandedInterval,
+                                    onDismissRequest = { expandedInterval = false }
+                                ) {
+                                    intervalOptions.forEach { value ->
+                                        DropdownMenuItem(
+                                            text = { Text("%.1f с".format(value)) },
+                                            onClick = {
+                                                selectedInterval = value
+                                                expandedInterval = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        // Вид протокола
+                        Box(modifier = Modifier.weight(1f)) {
+                            ExposedDropdownMenuBox(
+                                expanded = expandedProtocolType,
+                                onExpandedChange = { expandedProtocolType = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = selectedProtocolType,
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Вид") },
+                                    textStyle = MaterialTheme.typography.bodySmall,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProtocolType) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 32.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                )
+                                DropdownMenu(
+                                    expanded = expandedProtocolType,
+                                    onDismissRequest = { expandedProtocolType = false }
+                                ) {
+                                    protocolTypeOptions.forEach { value ->
+                                        DropdownMenuItem(
+                                            text = { Text(value) },
+                                            onClick = {
+                                                selectedProtocolType = value
+                                                expandedProtocolType = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Строка 3: Расст, Угол, Загр
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Расстояние
+                        Box(modifier = Modifier.weight(1f)) {
+                            ExposedDropdownMenuBox(
+                                expanded = expandedDistance,
+                                onExpandedChange = { expandedDistance = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = "%.1f м".format(selectedDistance),
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Расст.") },
+                                    textStyle = MaterialTheme.typography.bodySmall,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDistance) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 32.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                )
+                                DropdownMenu(
+                                    expanded = expandedDistance,
+                                    onDismissRequest = { expandedDistance = false }
+                                ) {
+                                    distanceOptions.forEach { value ->
+                                        DropdownMenuItem(
+                                            text = { Text("%.1f м".format(value)) },
+                                            onClick = {
+                                                selectedDistance = value
+                                                expandedDistance = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        // Угол
+                        Box(modifier = Modifier.weight(1f)) {
+                            ExposedDropdownMenuBox(
+                                expanded = expandedAngle,
+                                onExpandedChange = { expandedAngle = it }
+                            ) {
+                                OutlinedTextField(
+                                    value = "$selectedAngle°",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("Угол") },
+                                    textStyle = MaterialTheme.typography.bodySmall,
+                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedAngle) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 32.dp)
+                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
+                                )
+                                DropdownMenu(
+                                    expanded = expandedAngle,
+                                    onDismissRequest = { expandedAngle = false }
+                                ) {
+                                    angleOptions.forEach { value ->
+                                        DropdownMenuItem(
+                                            text = { Text("$value°") },
+                                            onClick = {
+                                                selectedAngle = value
+                                                expandedAngle = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         // Загрязнение
                         Box(modifier = Modifier.weight(1f)) {
                             ExposedDropdownMenuBox(
@@ -327,7 +438,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPollution) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 48.dp)
+                                        .defaultMinSize(minHeight = 32.dp)
                                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
@@ -350,85 +461,23 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Строка 3: Расстояние, Угол (по 1/2)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Расстояние
-                        Box(modifier = Modifier.weight(1f)) {
-                            ExposedDropdownMenuBox(
-                                expanded = expandedDistance,
-                                onExpandedChange = { expandedDistance = it }
-                            ) {
-                                OutlinedTextField(
-                                    value = "%.1f м".format(selectedDistance),
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Расст.") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDistance) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 48.dp)
-                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                                )
-                                DropdownMenu(
-                                    expanded = expandedDistance,
-                                    onDismissRequest = { expandedDistance = false }
-                                ) {
-                                    distanceOptions.forEach { value ->
-                                        DropdownMenuItem(
-                                            text = { Text("%.1f м".format(value)) },
-                                            onClick = {
-                                                selectedDistance = value
-                                                expandedDistance = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Угол
-                        Box(modifier = Modifier.weight(1f)) {
-                            ExposedDropdownMenuBox(
-                                expanded = expandedAngle,
-                                onExpandedChange = { expandedAngle = it }
-                            ) {
-                                OutlinedTextField(
-                                    value = "$selectedAngle°",
-                                    onValueChange = {},
-                                    readOnly = true,
-                                    label = { Text("Угол") },
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedAngle) },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 48.dp)
-                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                                )
-                                DropdownMenu(
-                                    expanded = expandedAngle,
-                                    onDismissRequest = { expandedAngle = false }
-                                ) {
-                                    angleOptions.forEach { value ->
-                                        DropdownMenuItem(
-                                            text = { Text("$value°") },
-                                            onClick = {
-                                                selectedAngle = value
-                                                expandedAngle = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // Строка 4: Примечание (на всю ширину)
+                    OutlinedTextField(
+                        value = selectedNote,
+                        onValueChange = { selectedNote = it },
+                        label = { Text("Примечание", style = MaterialTheme.typography.labelLarge) },
+                        textStyle = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 32.dp),
+                        singleLine = true
+                    )
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Строка кнопок "Отправить протокол" и "Очистить протокол"
+            // Кнопки управления (без изменений)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -473,7 +522,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Блок "Течение эксперимента"
+            // Блок "Течение эксперимента" (без изменений)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -492,7 +541,6 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 if (isExperimentRunning) {
                                     viewModel.stopExperiment()
                                 } else {
-                                    // Применяем выбранные значения к ViewModel
                                     viewModel.updateZone(selectedZone)
                                     viewModel.updateMounting(selectedMounting)
                                     viewModel.updateDistance(selectedDistance)
@@ -500,10 +548,12 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     viewModel.updatePollution(selectedPollution)
                                     viewModel.updateDuration(selectedDuration)
                                     viewModel.updateInterval(selectedInterval)
+                                    viewModel.updateProtocolType(selectedProtocolType)
+                                    viewModel.updateNote(selectedNote)
                                     viewModel.startExperiment()
                                 }
                             },
-                            enabled = isConnected, // активна всегда при подключении
+                            enabled = isConnected,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isExperimentRunning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                             )
@@ -513,6 +563,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                         Text("Инт: $totalIntervals")
                         Text("Время: %.1f с".format(currentTime))
                     }
+
                     Spacer(modifier = Modifier.height(8.dp))
 
                     if (statsList.isNotEmpty()) {
@@ -543,16 +594,48 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 val std = stat.stdDev(totalInt)
                                 val avgRssi = stat.avgRssi
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(stat.epc, Modifier.weight(2f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("$r", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                                    Text("$percent%", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                                    Text("%.2f".format(avg), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                                    Text("%.2f".format(std), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                                    Text("${stat.minCount}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                                    Text("%.1f".format(avgRssi), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        text = stat.epc,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(2f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "$r",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "$percent%",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "%.2f".format(avg),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "%.2f".format(std),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "${stat.minCount}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        text = "%.1f".format(avgRssi),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
                                 }
                             }
                         }

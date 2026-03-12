@@ -520,36 +520,13 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(
-                                "EPC",
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.weight(2f)
-                            )
-                            Text(
-                                "N",
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                "S",
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                "min",
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                "Z",
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                "RSSI",
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Text("EPC", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(2f))
+                            Text("R", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                            Text("%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                            Text("N", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                            Text("S", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                            Text("min", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                            Text("RSSI", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                         }
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
@@ -559,46 +536,23 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 .heightIn(max = 300.dp)
                         ) {
                             items(statsList) { stat ->
-                                val avg = stat.avgCount(totalIntervals)
-                                val std = stat.stdDev(totalIntervals)
+                                val totalInt = totalIntervals
+                                val r = stat.successfulIntervals
+                                val percent = if (totalInt > 0) (r * 100) / totalInt else 0
+                                val avg = stat.avgCount(totalInt)
+                                val std = stat.stdDev(totalInt)
+                                val avgRssi = stat.avgRssi
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(
-                                        text = stat.epc,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(2f),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "%.2f".format(avg),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = "%.2f".format(std),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = stat.minCount.toString(),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = stat.zeroIntervals.toString(),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = "%.1f".format(stat.avgRssi),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f)
-                                    )
+                                    Text(stat.epc, Modifier.weight(2f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("$r", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                    Text("$percent%", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                    Text("%.2f".format(avg), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                    Text("%.2f".format(std), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                    Text("${stat.minCount}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                    Text("%.1f".format(avgRssi), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }

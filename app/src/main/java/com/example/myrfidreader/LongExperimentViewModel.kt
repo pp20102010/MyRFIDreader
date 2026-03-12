@@ -11,41 +11,20 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-
-data class EPCStats(
-    val epc: String,
-    var totalCount: Int = 0,
-    var sumCount: Int = 0,
-    var sumSquares: Double = 0.0,
-    var minCount: Int = Int.MAX_VALUE,
-    var zeroIntervals: Int = 0,
-    var totalRssi: Int = 0,
-    var rssiCount: Int = 0
-) {
-    val avgRssi: Double get() = if (rssiCount > 0) totalRssi.toDouble() / rssiCount else 0.0
-    fun avgCount(intervals: Int): Double =
-        if (intervals > 0) sumCount.toDouble() / intervals else 0.0
-
-    fun stdDev(intervals: Int): Double {
-        if (intervals <= 1) return 0.0
-        val mean = avgCount(intervals)
-        return Math.sqrt((sumSquares / intervals) - (mean * mean))
-    }
-}
-
-class LongExperimentViewModel(application: Application) : AndroidViewModel(application),
-    OnDataReceivedListener {
+class LongExperimentViewModel(application: Application) : AndroidViewModel(application), OnDataReceivedListener {
 
     val experimentNumber = MutableStateFlow(1)
     var zone by mutableStateOf("А"); private set
@@ -68,70 +47,70 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     private val _totalIntervals = MutableStateFlow(0)
     val totalIntervals: StateFlow<Int> = _totalIntervals
 
-    private var currentIntervalReadings = mutableListOf<Triple<String, Int, Long>>()
+    // Счетчики для текущего интервала (EPC -> количество считываний)
+    private var intervalEpcCounts = mutableMapOf<String, Int>()
+    // Для записи строк интервала (будем накапливать и записывать одной пачкой)
+    private var intervalLines = mutableListOf<String>()
+
     private var intervalIndex = 0
     private var experimentStartTime = 0L
 
     private var timerJob: Job? = null
 
-    private val prefs: SharedPreferences =
-        application.getSharedPreferences("long_exp_prefs", Context.MODE_PRIVATE)
-    private val dateFormatter = SimpleDateFormat("MMdd HH:mm:ss.SSS", Locale.getDefault())
+    private val prefs: SharedPreferences = application.getSharedPreferences("long_exp_prefs", Context.MODE_PRIVATE)
+    private val dateFormatter = SimpleDateFormat("yyMMdd HH:mm:ss.SSS", Locale.getDefault())
     private val file = File(application.filesDir, "experiment_log.txt")
     private val incomingBuffer = mutableListOf<Byte>()
+
+    // Поток для записи в файл, открытый на всё время эксперимента
+    private var fileOutputStream: FileOutputStream? = null
 
     init {
         experimentNumber.value = prefs.getInt("last_exp_number", 1)
         UsbDataDispatcher.registerListener(this)
     }
 
-    fun updateZone(value: String) {
-        zone = value
-    }
-
-    fun updateMounting(value: String) {
-        mounting = value
-    }
-
-    fun updateDistance(value: Double) {
-        distance = value
-    }
-
-    fun updateAngle(value: Int) {
-        angle = value
-    }
-
-    fun updatePollution(value: String) {
-        pollution = value
-    }
-
-    fun updateDuration(value: Int) {
-        duration = value
-    }
-
-    fun updateInterval(value: Double) {
-        interval = value
-    }
+    fun updateZone(value: String) { zone = value }
+    fun updateMounting(value: String) { mounting = value }
+    fun updateDistance(value: Double) { distance = value }
+    fun updateAngle(value: Int) { angle = value }
+    fun updatePollution(value: String) { pollution = value }
+    fun updateDuration(value: Int) { duration = value }
+    fun updateInterval(value: Double) { interval = value }
 
     fun isInputValid(): Boolean = true
 
     fun startExperiment() {
         if (_isExperimentRunning.value) return
+
+        // Закрываем предыдущий поток, если был открыт
+        closeFileStream()
+
+        try {
+            fileOutputStream = FileOutputStream(file, true)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return
+        }
+
         _isExperimentRunning.value = true
         _currentTime.value = 0.0
         _totalIntervals.value = 0
         intervalIndex = 0
         experimentStartTime = System.currentTimeMillis()
         incomingBuffer.clear()
-        currentIntervalReadings.clear()
+        intervalEpcCounts.clear()
+        intervalLines.clear()
         _statsList.value = emptyList()
 
-        viewModelScope.launch {
-            writeToFile("Начало эксперимента;${formatDate()}")
-            writeToFile("Номер эксперимента: ${experimentNumber.value};Зона: $zone;Крепление: $mounting;Расстояние: $distance;Угол: $angle;Загрязнение: $pollution;Длительность: $duration;Интервал: $interval")
-        }
+        // Заголовки записываем сразу
+        val headerLines = listOf(
+            "Начало эксперимента;${formatDate()}",
+            "Номер эксперимента: ${experimentNumber.value};Зона: $zone;Крепление: $mounting;Расстояние: $distance;Угол: $angle;Загрязнение: $pollution;Длительность: $duration;Интервал: $interval"
+        )
+        // Синхронная запись (ждём завершения)
+        viewModelScope.launch { writeLinesSync(headerLines) }
 
-        // Запуск таймера для обновления времени каждую секунду
         timerJob = viewModelScope.launch {
             while (_isExperimentRunning.value) {
                 _currentTime.value = (System.currentTimeMillis() - experimentStartTime) / 1000.0
@@ -142,15 +121,47 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch { runExperiment() }
     }
 
-    // Метод для остановки эксперимента
     fun stopExperiment() {
         if (!_isExperimentRunning.value) return
         _isExperimentRunning.value = false
         timerJob?.cancel()
         viewModelScope.launch {
-            writeToFile("${formatDate()}; серия прервана пользователем")
-            writeToFile("")
+            // Записываем последний интервал (если есть)
+            flushInterval()
+            writeLinesSync(listOf("${formatDate()}; серия прервана пользователем", ""))
+            closeFileStream()
         }
+    }
+
+    private suspend fun writeLinesSync(lines: List<String>) = withContext(Dispatchers.IO) {
+        if (lines.isEmpty() || fileOutputStream == null) return@withContext
+        synchronized(fileOutputStream!!) {
+            try {
+                for (line in lines) {
+                    fileOutputStream!!.write(line.toByteArray())
+                    fileOutputStream!!.write("\n".toByteArray())
+                }
+                fileOutputStream!!.flush()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private suspend fun flushInterval() {
+        if (intervalLines.isNotEmpty()) {
+            writeLinesSync(intervalLines)
+            intervalLines.clear()
+        }
+    }
+
+    private fun closeFileStream() {
+        try {
+            fileOutputStream?.close()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        fileOutputStream = null
     }
 
     private suspend fun runExperiment() {
@@ -165,8 +176,10 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             elapsed = System.currentTimeMillis() - startTime
             if (elapsed + intervalMs > totalDurationMs) break
 
+            // Начало нового интервала
+            intervalEpcCounts.clear()
+            intervalLines.clear()
             val readingStart = System.currentTimeMillis()
-            currentIntervalReadings.clear()
             val readingEndTime = readingStart + intervalMs
 
             while (System.currentTimeMillis() < readingEndTime && _isExperimentRunning.value) {
@@ -176,17 +189,9 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             intervalIndex++
             _totalIntervals.value = intervalIndex
 
-            val intervalStats = mutableMapOf<String, MutableList<Int>>()
-            for ((epc, rssi, time) in currentIntervalReadings) {
-                intervalStats.getOrPut(epc) { mutableListOf() }.add(rssi)
-                // Запись в файл с конкретным временем
-                writeToFile("${formatDate(time)};$epc;$rssi")
-            }
-
+            // Обработка накопленных счетчиков интервала (количество считываний)
             val currentStats = _statsList.value.toMutableList()
-            for ((epc, rssiList) in intervalStats) {
-                val count = rssiList.size
-                val avgRssi = rssiList.average().toInt()
+            for ((epc, count) in intervalEpcCounts) {
                 var stat = currentStats.find { it.epc == epc }
                 if (stat == null) {
                     stat = EPCStats(epc)
@@ -196,32 +201,19 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
                 stat.sumSquares += count * count
                 stat.totalCount += count
                 if (count < stat.minCount) stat.minCount = count
-                stat.totalRssi += avgRssi * count
-                stat.rssiCount += count
-            }
-            currentStats.forEach { stat ->
-                if (!intervalStats.containsKey(stat.epc)) {
-                    stat.zeroIntervals++
-                }
+                stat.successfulIntervals++
             }
             _statsList.value = currentStats.sortedByDescending { it.sumCount }
 
-//            val intervalTime = System.currentTimeMillis()
-//            for ((epc, rssiList) in intervalStats) {
-//                for (rssi in rssiList) {
-//                    writeToFile("${formatDate(intervalTime)};$epc;$rssi")
-//                }
-//            }
+            // Записываем накопленные строки интервала (все считанные значения с временем)
+            if (intervalLines.isNotEmpty()) {
+                writeLinesSync(intervalLines)
+            }
 
             elapsed = System.currentTimeMillis() - startTime
             if (elapsed + pauseMs + intervalMs <= totalDurationMs) {
-                val pauseStart = System.currentTimeMillis()
-                var pauseElapsed = 0L
-                while (pauseElapsed < pauseMs && _isExperimentRunning.value) {
-                    writeToFile("${formatDate()};пауза считывания")
-                    delay(1000)
-                    pauseElapsed = System.currentTimeMillis() - pauseStart
-                }
+                writeLinesSync(listOf("${formatDate()};пауза считывания"))
+                delay(pauseMs)
             } else {
                 break
             }
@@ -230,25 +222,27 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
 
         if (_isExperimentRunning.value) {
             _isExperimentRunning.value = false
-            timerJob?.cancel() // остановка таймера
+            timerJob?.cancel()
 
-            viewModelScope.launch {
-                writeToFile("Эксперимент завершен, количество интервалов чтения - ${_totalIntervals.value}")
-                writeToFile("Номер эксперимента: ${experimentNumber.value};Зона: $zone;Крепление: $mounting;Расстояние: $distance;Угол: $angle;Загрязнение: $pollution;Длительность: $duration;Интервал: $interval")
-                writeToFile("Итоговая статистика:")
-                _statsList.value.forEach { stat ->
-                    val avg = stat.avgCount(_totalIntervals.value)
-                    val std = stat.stdDev(_totalIntervals.value)
-                    writeToFile(
-                        "EPC: ${stat.epc}; N=%.2f; S=%.2f; min=${stat.minCount}; Z=${stat.zeroIntervals}; RSSI=%.1f".format(
-                            avg,
-                            std,
-                            stat.avgRssi
-                        )
-                    )
-                }
-                writeToFile("")
+            // Финальная статистика
+            val summaryLines = mutableListOf<String>()
+            summaryLines.add("Эксперимент завершен, количество интервалов чтения - ${_totalIntervals.value}")
+            summaryLines.add("Номер эксперимента: ${experimentNumber.value};Зона: $zone;Крепление: $mounting;Расстояние: $distance;Угол: $angle;Загрязнение: $pollution;Длительность: $duration;Интервал: $interval")
+            summaryLines.add("Итоговая статистика:")
+            _statsList.value.forEach { stat ->
+                val totalInt = _totalIntervals.value
+                val r = stat.successfulIntervals
+                val percent = if (totalInt > 0) (r * 100.0) / totalInt else 0.0
+                val avg = stat.avgCount(totalInt)
+                val std = stat.stdDev(totalInt)
+                val avgRssi = stat.avgRssi
+                val stdRssi = stat.stdDevRssi()
+                summaryLines.add("EPC: ${stat.epc}; I=$totalInt; R=$r; R%=${"%.2f".format(percent)}; N=${"%.2f".format(avg)}; S(N)=${"%.2f".format(std)}; min=${stat.minCount}; RSSI=${"%.1f".format(avgRssi)}; S(RSSI)=${"%.2f".format(stdRssi)}")
             }
+            summaryLines.add("")
+            writeLinesSync(summaryLines)
+            closeFileStream()
+
             experimentNumber.value++
             prefs.edit().putInt("last_exp_number", experimentNumber.value).apply()
         }
@@ -267,8 +261,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             if (headerIndex > 0) incomingBuffer.subList(0, headerIndex).clear()
             if (incomingBuffer.size < 8) break
 
-            val length =
-                ((incomingBuffer[2].toInt() and 0xFF) shl 8) or (incomingBuffer[3].toInt() and 0xFF)
+            val length = ((incomingBuffer[2].toInt() and 0xFF) shl 8) or (incomingBuffer[3].toInt() and 0xFF)
             val totalPacketLen = 4 + length
             if (incomingBuffer.size < totalPacketLen) break
 
@@ -312,7 +305,25 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
                 val epcHex = epcBytes.joinToString("") { "%02X".format(it) }
                 val rssi = tagData[tagData.size - 1].toInt() and 0xFF
                 val now = System.currentTimeMillis()
-                currentIntervalReadings.add(Triple(epcHex, rssi, now))
+
+                // Сохраняем строку для записи в конце интервала
+                intervalLines.add("${formatDate(now)};$epcHex;$rssi")
+
+                // Обновляем счетчик интервала
+                intervalEpcCounts[epcHex] = (intervalEpcCounts[epcHex] ?: 0) + 1
+
+                // Обновляем глобальную статистику RSSI
+                val currentStats = _statsList.value.toMutableList()
+                var stat = currentStats.find { it.epc == epcHex }
+                if (stat == null) {
+                    stat = EPCStats(epcHex)
+                    currentStats.add(stat)
+                }
+                stat.totalRssi += rssi
+                stat.sumRssiSquares += rssi * rssi
+                stat.rssiCount++
+                _statsList.value = currentStats.sortedByDescending { it.sumCount }
+
                 pos += 1 + tagLen
             }
         } else {
@@ -329,7 +340,22 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
                 val epcHex = epcBytes.joinToString("") { "%02X".format(it) }
                 val rssi = tagData[tagData.size - 1].toInt() and 0xFF
                 val now = System.currentTimeMillis()
-                currentIntervalReadings.add(Triple(epcHex, rssi, now))
+
+                intervalLines.add("${formatDate(now)};$epcHex;$rssi")
+
+                intervalEpcCounts[epcHex] = (intervalEpcCounts[epcHex] ?: 0) + 1
+
+                val currentStats = _statsList.value.toMutableList()
+                var stat = currentStats.find { it.epc == epcHex }
+                if (stat == null) {
+                    stat = EPCStats(epcHex)
+                    currentStats.add(stat)
+                }
+                stat.totalRssi += rssi
+                stat.sumRssiSquares += rssi * rssi
+                stat.rssiCount++
+                _statsList.value = currentStats.sortedByDescending { it.sumCount }
+
                 pos += 1 + tagLen
             }
         }
@@ -338,9 +364,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     private fun findHeader(buffer: List<Byte>, header: ByteArray): Int {
         for (i in 0 until buffer.size - header.size + 1) {
             var match = true
-            for (j in header.indices) if (buffer[i + j] != header[j]) {
-                match = false; break
-            }
+            for (j in header.indices) if (buffer[i + j] != header[j]) { match = false; break }
             if (match) return i
         }
         return -1
@@ -352,22 +376,11 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         return ((sum.inv() + 1) and 0xFF).toByte()
     }
 
-    private fun formatDate(time: Long = System.currentTimeMillis()): String =
-        dateFormatter.format(Date(time))
-
-    private fun writeToFile(line: String) {
-        viewModelScope.launch {
-            try {
-                if (!file.exists()) file.createNewFile()
-                FileOutputStream(file, true).use { it.write((line + "\n").toByteArray()) }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
+    private fun formatDate(time: Long = System.currentTimeMillis()): String = dateFormatter.format(Date(time))
 
     fun clearProtocol() {
         viewModelScope.launch {
+            closeFileStream()
             if (file.exists()) file.delete()
             experimentNumber.value = 1
             prefs.edit().putInt("last_exp_number", 1).apply()
@@ -395,5 +408,6 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     override fun onCleared() {
         super.onCleared()
         UsbDataDispatcher.unregisterListener(this)
+        closeFileStream()
     }
 }

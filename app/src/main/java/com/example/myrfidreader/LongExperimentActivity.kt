@@ -43,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -53,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -116,6 +118,16 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     val mountingOptions = listOf("M", "C")
     val pollutionOptions = listOf("нет", "вода", "масло")
     val protocolTypeOptions = listOf("итоги", "полный")
+    val view = LocalView.current
+    val isTestRunning by viewModel.isExperimentRunning.collectAsState()
+
+    //функция удерание экрана активным во время теста
+    DisposableEffect(isTestRunning) {
+        view.keepScreenOn = isTestRunning
+        onDispose {
+            view.keepScreenOn = false
+        }
+    }
 
     Scaffold(
         topBar = {

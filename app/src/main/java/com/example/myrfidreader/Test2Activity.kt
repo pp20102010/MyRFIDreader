@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -47,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -73,7 +75,16 @@ class Test2Activity : ComponentActivity() {
 fun Test2Screen(viewModel: Test2ViewModel = viewModel()) {
     val context = LocalContext.current
     val isConnected by UsbConnectionHolder.isConnected
+    val view = LocalView.current
     val isTestRunning by viewModel.isTestRunning.collectAsState()
+
+    //функция удерание экрана активным во время теста
+    DisposableEffect(isTestRunning) {
+        view.keepScreenOn = isTestRunning
+        onDispose {
+            view.keepScreenOn = false
+        }
+    }
     val epcList by viewModel.epcList.collectAsState()
     val elapsedSeconds by viewModel.elapsedSeconds.collectAsState()
     val testDuration by viewModel.testDuration.collectAsState()

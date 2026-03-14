@@ -142,6 +142,17 @@ fun LauncherScreen() {
 
             Button(
                 onClick = {
+                    context.startActivity(Intent(context, RssiTestActivity::class.java))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Тест RSSI")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = {
                     context.startActivity(Intent(context, InstructionActivity::class.java))
                 },
                 modifier = Modifier.fillMaxWidth()

@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.media.RingtoneManager
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -148,6 +149,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             }
             val abortLine = "Эксперимент серия: ${experimentNumber.value} ; прерван пользователем ; ${formatDate()}"
             writeLinesSync(listOf(abortLine, ""))
+            playNotificationSound()//звук остановки
             closeFileStream()
         }
     }
@@ -186,7 +188,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     private suspend fun runExperiment() {
         val totalDurationMs = (duration * 1000).toLong()
         val intervalMs = (interval * 1000).toLong()
-        val pauseMs = 2000L
+        val pauseMs = intervalMs
         val startTime = System.currentTimeMillis()
         var elapsed: Long
 
@@ -294,6 +296,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
 
             closeFileStream()
 
+            playNotificationSound() //звук окончания
             experimentNumber.value++
             prefs.edit().putInt("last_exp_number", experimentNumber.value).apply()
         }
@@ -465,5 +468,17 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         super.onCleared()
         UsbDataDispatcher.unregisterListener(this)
         closeFileStream()
+    }
+
+    private fun playNotificationSound() {
+        viewModelScope.launch(Dispatchers.Main) {
+            try {
+                val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                val ringtone = RingtoneManager.getRingtone(getApplication(), notificationUri)
+                ringtone.play()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 }

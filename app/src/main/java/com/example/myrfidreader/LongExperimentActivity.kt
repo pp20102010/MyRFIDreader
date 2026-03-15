@@ -111,17 +111,17 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     var showClearDialog by remember { mutableStateOf(false) }
 
     val distanceOptions = (1..20).map { it * 0.5 }       // 0.5 ... 10.0
-    val angleOptions = (0..180 step 15).toList()
+    val angleOptions = (0..180 step 30).toList()
     val durationOptions = listOf(50, 100, 200)
     val intervalOptions = listOf(0.5, 1.0, 2.0)
-    val zoneOptions = listOf("А", "Б", "В", "Г", "Д")
+    val zoneOptions = listOf("А", "Б", "В0", "В30", "В45", "В60", "В90")
     val mountingOptions = listOf("M", "C")
     val pollutionOptions = listOf("нет", "вода", "масло")
     val protocolTypeOptions = listOf("итоги", "полный")
     val view = LocalView.current
     val isTestRunning by viewModel.isExperimentRunning.collectAsState()
 
-    //функция удерание экрана активным во время теста
+    //функция удержание экрана активным во время теста
     DisposableEffect(isTestRunning) {
         view.keepScreenOn = isTestRunning
         onDispose {

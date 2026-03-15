@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.myrfidreader.ui.theme.MyRFIDreaderTheme
 
@@ -84,14 +85,28 @@ fun LauncherScreen() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // Кнопки (как раньше)
+            // Кнопки (//как раньше)
+//            Button(
+//                onClick = {
+//                    context.startActivity(Intent(context, MainActivity::class.java))
+//                },
+//                modifier = Modifier.fillMaxWidth()
+//            ) {
+//                Text("Настройки программы (подключение)")
+//            }
+
             Button(
                 onClick = {
                     context.startActivity(Intent(context, MainActivity::class.java))
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Настройки программы (подключение)")
+                Text(
+                    text = "Настройки программы\n(подключение)",
+                    style = MaterialTheme.typography.bodyLarge, // можно использовать любой стиль
+                    maxLines = 2,
+                    textAlign = TextAlign.Center
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))

@@ -192,12 +192,16 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("Настройки программы")
-                },
+                title = { Text("Настройки программы") },
                 navigationIcon = {
-                    IconButton(onClick = { (context as? MainActivity)?.finish() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                    IconButton(
+                        onClick = {
+                            val intent = Intent(context, LauncherActivity::class.java)
+                            intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+                            context.startActivity(intent)
+                        }
+                    ) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "На главный экран")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

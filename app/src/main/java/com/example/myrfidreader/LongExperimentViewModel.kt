@@ -1,4 +1,3 @@
-// LongExperimentViewModel.kt
 package com.example.myrfidreader
 
 import android.app.Application
@@ -70,6 +69,11 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     // Поток для записи в файл, открытый на всё время эксперимента
     private var fileOutputStream: FileOutputStream? = null
 
+    // Флаг, был ли уже записан CSV-заголовок
+    private var isHeaderWritten: Boolean
+        get() = prefs.getBoolean("is_header_written", false)
+        set(value) = prefs.edit().putBoolean("is_header_written", value).apply()
+
     init {
         experimentNumber.value = prefs.getInt("last_exp_number", 1)
         UsbDataDispatcher.registerListener(this)
@@ -109,10 +113,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         intervalLines.clear()
         _statsList.value = emptyList()
 
-        // Новая строка начала серии
-        val headerLine = "Эксперимент серия: ${experimentNumber.value} ;начат ;${formatDate()}"
-        viewModelScope.launch { writeLinesSync(listOf(headerLine)) }
-
+        // Запуск таймера для обновления времени каждую секунду
         timerJob = viewModelScope.launch {
             while (_isExperimentRunning.value) {
                 _currentTime.value = (System.currentTimeMillis() - experimentStartTime) / 1000.0
@@ -120,7 +121,20 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             }
         }
 
-        viewModelScope.launch { runExperiment() }
+        viewModelScope.launch {
+            // Если файл новый, запишем CSV-заголовок
+            if (!isHeaderWritten) {
+                val header = "CSV;Эксперимент серия №;Начат;Закончен;Зона;Крепление;Расстояние;Угол;Загрязнение;Длительность;Интервал;Примечание;EPC;Интервалов в эксперименте(I);Результативных интервалов(R);Результативность%(R%);Считываний среднее(N);Среднее отклонение считывания(S(N));Минимум считываний в результативном интервале(min);Средний уровень принятого сигнала(RSSI);Среднее отклонение (S(RSSI))"
+                writeLinesSync(listOf(header))
+                isHeaderWritten = true
+            }
+            // Пустая строка перед началом эксперимента
+            writeLinesSync(listOf(""))
+            val startLine = "Эксперимент серия: ${experimentNumber.value} ; начат ; ${formatDate()}"
+            writeLinesSync(listOf(startLine))
+
+            runExperiment()
+        }
     }
 
     fun stopExperiment() {
@@ -132,7 +146,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             if (protocolType == "полный") {
                 flushInterval()
             }
-            val abortLine = "Эксперимент серия: ${experimentNumber.value} ;прерван пользователем ;${formatDate()} ;"
+            val abortLine = "Эксперимент серия: ${experimentNumber.value} ; прерван пользователем ; ${formatDate()}"
             writeLinesSync(listOf(abortLine, ""))
             closeFileStream()
         }
@@ -233,9 +247,9 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             _isExperimentRunning.value = false
             timerJob?.cancel()
 
-            // Финальная статистика (всегда)
+            // Финальная статистика (текст) – без пустой строки в конце
             val summaryLines = mutableListOf<String>()
-            val finishLine = "Эксперимент серия: ${experimentNumber.value} ;завершен ;${formatDate()} ; Зона: $zone; Крепление: $mounting; Расстояние: $distance; Угол: $angle; Загрязнение: $pollution; Длительность: $duration; Интервал: $interval; Примечание: $note"
+            val finishLine = "Эксперимент серия: ${experimentNumber.value} ; завершен ; ${formatDate()} ; Зона: $zone ; Крепление: $mounting ; Расстояние: $distance ; Угол: $angle ; Загрязнение: $pollution ; Длительность: $duration ; Интервал: $interval ; Примечание: $note"
             summaryLines.add(finishLine)
             summaryLines.add("Итоговая статистика:")
             _statsList.value.forEach { stat ->
@@ -248,8 +262,36 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
                 val stdRssi = stat.stdDevRssi()
                 summaryLines.add("EPC: ${stat.epc}; I=$totalInt; R=$r; R%=${"%.2f".format(percent)}; N=${"%.2f".format(avg)}; S(N)=${"%.2f".format(std)}; min=${stat.minCount}; RSSI=${"%.1f".format(avgRssi)}; S(RSSI)=${"%.2f".format(stdRssi)}")
             }
-            summaryLines.add("")
+            // Убрана пустая строка из summaryLines
             writeLinesSync(summaryLines)
+
+            // CSV-строки для каждого EPC или пустая строка, если нет EPC
+            val csvLines = mutableListOf<String>()
+            val startDate = formatDate(experimentStartTime)
+            val endDate = formatDate()
+
+            if (_statsList.value.isEmpty()) {
+                // Нет ни одного EPC – записываем строку с пустыми полями для статистики
+                val commonPrefix = "CSV;${experimentNumber.value};$startDate;$endDate;$zone;$mounting;$distance;$angle;$pollution;$duration;$interval;$note"
+                val emptyCsv = commonPrefix + ";".repeat(9) // 9 пустых полей (EPC, I, R, R%, N, S(N), min, RSSI, S(RSSI))
+                csvLines.add(emptyCsv)
+            } else {
+                _statsList.value.forEach { stat ->
+                    val totalInt = _totalIntervals.value
+                    val r = stat.successfulIntervals
+                    val percent = if (totalInt > 0) (r * 100.0) / totalInt else 0.0
+                    val avg = stat.avgCount(totalInt)
+                    val std = stat.stdDev(totalInt)
+                    val avgRssi = stat.avgRssi
+                    val stdRssi = stat.stdDevRssi()
+                    val csvLine = "CSV;${experimentNumber.value};$startDate;$endDate;$zone;$mounting;$distance;$angle;$pollution;$duration;$interval;$note;${stat.epc};$totalInt;$r;${"%.2f".format(percent)};${"%.2f".format(avg)};${"%.2f".format(std)};${stat.minCount};${"%.1f".format(avgRssi)};${"%.2f".format(stdRssi)}"
+                    csvLines.add(csvLine)
+                }
+            }
+            if (csvLines.isNotEmpty()) {
+                writeLinesSync(csvLines)
+            }
+
             closeFileStream()
 
             experimentNumber.value++
@@ -395,6 +437,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch {
             closeFileStream()
             if (file.exists()) file.delete()
+            isHeaderWritten = false
             experimentNumber.value = 1
             prefs.edit().putInt("last_exp_number", 1).apply()
         }

@@ -33,7 +33,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     var distance by mutableStateOf(0.5); private set
     var angle by mutableStateOf(0); private set
     var pollution by mutableStateOf("нет"); private set
-    var duration by mutableStateOf(100); private set
+    var duration by mutableStateOf(-1) ; private set
     var interval by mutableStateOf(2.0); private set
     var protocolType by mutableStateOf("итоги") // "итоги" или "полный"
         private set
@@ -114,7 +114,6 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         intervalLines.clear()
         _statsList.value = emptyList()
 
-        // Запуск таймера для обновления времени каждую секунду
         timerJob = viewModelScope.launch {
             while (_isExperimentRunning.value) {
                 _currentTime.value = (System.currentTimeMillis() - experimentStartTime) / 1000.0
@@ -123,13 +122,11 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         }
 
         viewModelScope.launch {
-            // Если файл новый, запишем CSV-заголовок
             if (!isHeaderWritten) {
                 val header = "CSV;Эксперимент серия №;Начат;Закончен;Зона;Крепление;Расстояние;Угол;Загрязнение;Длительность;Интервал;Примечание;EPC;Интервалов в эксперименте(I);Результативных интервалов(R);Результативность%(R%);Считываний среднее(N);Среднее отклонение считывания(S(N));Минимум считываний в результативном интервале(min);Средний уровень принятого сигнала(RSSI);Среднее отклонение (S(RSSI))"
                 writeLinesSync(listOf(header))
                 isHeaderWritten = true
             }
-            // Пустая строка перед началом эксперимента
             writeLinesSync(listOf(""))
             val startLine = "Эксперимент серия: ${experimentNumber.value} ; начат ; ${formatDate()}"
             writeLinesSync(listOf(startLine))
@@ -143,14 +140,13 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         _isExperimentRunning.value = false
         timerJob?.cancel()
         viewModelScope.launch {
-            // Если был полный режим, записываем остатки интервала
             if (protocolType == "полный") {
                 flushInterval()
             }
             val abortLine = "Эксперимент серия: ${experimentNumber.value} ; прерван пользователем ; ${formatDate()}"
             writeLinesSync(listOf(abortLine, ""))
-            playNotificationSound()//звук остановки
             closeFileStream()
+            playNotificationSound()
         }
     }
 
@@ -186,6 +182,14 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     }
 
     private suspend fun runExperiment() {
+        if (duration == -1) {
+            runExperimentAutoDuration()
+        } else {
+            runExperimentNormal()
+        }
+    }
+
+    private suspend fun runExperimentNormal() {
         val totalDurationMs = (duration * 1000).toLong()
         val intervalMs = (interval * 1000).toLong()
         val pauseMs = intervalMs
@@ -197,11 +201,8 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             elapsed = System.currentTimeMillis() - startTime
             if (elapsed + intervalMs > totalDurationMs) break
 
-            // Начало нового интервала
             intervalEpcCounts.clear()
-            if (protocolType == "полный") {
-                intervalLines.clear()
-            }
+            if (protocolType == "полный") intervalLines.clear()
             val readingStart = System.currentTimeMillis()
             val readingEndTime = readingStart + intervalMs
 
@@ -212,7 +213,6 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             intervalIndex++
             _totalIntervals.value = intervalIndex
 
-            // Обработка накопленных счетчиков интервала (количество считываний) – всегда
             val currentStats = _statsList.value.toMutableList()
             for ((epc, count) in intervalEpcCounts) {
                 var stat = currentStats.find { it.epc == epc }
@@ -228,7 +228,6 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             }
             _statsList.value = currentStats.sortedByDescending { it.sumCount }
 
-            // Если полный режим – записываем накопленные строки интервала
             if (protocolType == "полный" && intervalLines.isNotEmpty()) {
                 writeLinesSync(intervalLines)
             }
@@ -246,14 +245,120 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         }
 
         if (_isExperimentRunning.value) {
-            _isExperimentRunning.value = false
-            timerJob?.cancel()
+            finishExperiment(earlyStop = false)
+        }
+    }
 
-            // Финальная статистика (текст) – без пустой строки в конце
-            val summaryLines = mutableListOf<String>()
-            val finishLine = "Эксперимент серия: ${experimentNumber.value} ; завершен ; ${formatDate()} ; Зона: $zone ; Крепление: $mounting ; Расстояние: $distance ; Угол: $angle ; Загрязнение: $pollution ; Длительность: $duration ; Интервал: $interval ; Примечание: $note"
-            summaryLines.add(finishLine)
-            summaryLines.add("Итоговая статистика:")
+    private suspend fun runExperimentAutoDuration() {
+        val maxDurationMs = 200000L // 200 с
+        val intervalMs = (interval * 1000).toLong()
+        val pauseMs = intervalMs
+        val startTime = System.currentTimeMillis()
+        var elapsed: Long
+
+        while (true) {
+            if (!_isExperimentRunning.value) break
+            elapsed = System.currentTimeMillis() - startTime
+            if (elapsed + intervalMs > maxDurationMs) break
+
+            intervalEpcCounts.clear()
+            if (protocolType == "полный") intervalLines.clear()
+            val readingStart = System.currentTimeMillis()
+            val readingEndTime = readingStart + intervalMs
+
+            while (System.currentTimeMillis() < readingEndTime && _isExperimentRunning.value) {
+                delay(50)
+            }
+
+            intervalIndex++
+            _totalIntervals.value = intervalIndex
+
+            val currentStats = _statsList.value.toMutableList()
+            for ((epc, count) in intervalEpcCounts) {
+                var stat = currentStats.find { it.epc == epc }
+                if (stat == null) {
+                    stat = EPCStats(epc)
+                    currentStats.add(stat)
+                }
+                stat.sumCount += count
+                stat.sumSquares += count * count
+                stat.totalCount += count
+                if (count < stat.minCount) stat.minCount = count
+                stat.successfulIntervals++
+            }
+            _statsList.value = currentStats.sortedByDescending { it.sumCount }
+
+            if (protocolType == "полный" && intervalLines.isNotEmpty()) {
+                writeLinesSync(intervalLines)
+            }
+
+            // Проверка условия досрочного завершения
+            if (shouldStopEarly()) {
+                finishExperiment(earlyStop = true)
+                return
+            }
+
+            elapsed = System.currentTimeMillis() - startTime
+            if (elapsed + pauseMs + intervalMs <= maxDurationMs) {
+                if (protocolType == "полный") {
+                    writeLinesSync(listOf("${formatDate()};пауза считывания"))
+                }
+                delay(pauseMs)
+            } else {
+                break
+            }
+            _currentTime.value = (System.currentTimeMillis() - startTime) / 1000.0
+        }
+
+        if (_isExperimentRunning.value) {
+            finishExperiment(earlyStop = false)
+        }
+    }
+
+    private fun shouldStopEarly(): Boolean {
+        if (_totalIntervals.value <= 12) return false
+        val stats = _statsList.value
+        if (stats.isEmpty()) return false
+        // Для каждого EPC проверяем, что CV <= 0.05 (avg гарантированно > 0)
+        return stats.all { stat ->
+            val avg = stat.avgCount(_totalIntervals.value)
+            (stat.stdDev(_totalIntervals.value) / avg) <= 0.05
+        }
+    }
+
+    private suspend fun finishExperiment(earlyStop: Boolean) {
+        _isExperimentRunning.value = false
+        timerJob?.cancel()
+
+        val summaryLines = mutableListOf<String>()
+        val finishLine = if (earlyStop) {
+            "Эксперимент серия: ${experimentNumber.value} ; завершен досрочно по стабильности ; ${formatDate()} ; Зона: $zone ; Крепление: $mounting ; Расстояние: $distance ; Угол: $angle ; Загрязнение: $pollution ; Длительность: ${if (duration == -1) "авто" else "$duration с"} ; Интервал: ${"%.1f".format(interval)} с ; Примечание: $note"
+        } else {
+            "Эксперимент серия: ${experimentNumber.value} ; завершен ; ${formatDate()} ; Зона: $zone ; Крепление: $mounting ; Расстояние: $distance ; Угол: $angle ; Загрязнение: $pollution ; Длительность: ${if (duration == -1) "авто" else "$duration с"} ; Интервал: ${"%.1f".format(interval)} с ; Примечание: $note"
+        }
+        summaryLines.add(finishLine)
+        summaryLines.add("Итоговая статистика:")
+        _statsList.value.forEach { stat ->
+            val totalInt = _totalIntervals.value
+            val r = stat.successfulIntervals
+            val percent = if (totalInt > 0) (r * 100.0) / totalInt else 0.0
+            val avg = stat.avgCount(totalInt)
+            val std = stat.stdDev(totalInt)
+            val avgRssi = stat.avgRssi
+            val stdRssi = stat.stdDevRssi()
+            summaryLines.add("EPC: ${stat.epc}; I=$totalInt; R=$r; R%=${"%.2f".format(percent)}; N=${"%.2f".format(avg)}; S(N)=${"%.2f".format(std)}; min=${stat.minCount}; RSSI=${"%.1f".format(avgRssi)}; S(RSSI)=${"%.2f".format(stdRssi)}")
+        }
+        writeLinesSync(summaryLines)
+
+        // CSV-строки
+        val csvLines = mutableListOf<String>()
+        val startDate = formatDate(experimentStartTime)
+        val endDate = formatDate()
+        if (_statsList.value.isEmpty()) {
+            val commonPrefix = "CSV;${experimentNumber.value};$startDate;$endDate;$zone;$mounting;$distance;$angle;$pollution;${if (duration == -1) "авто" else "$duration с"};${"%.1f".format(interval)};$note"
+            val emptyCsv = commonPrefix + ";".repeat(9)
+            csvLines.add(emptyCsv)
+        } else {
             _statsList.value.forEach { stat ->
                 val totalInt = _totalIntervals.value
                 val r = stat.successfulIntervals
@@ -262,43 +367,30 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
                 val std = stat.stdDev(totalInt)
                 val avgRssi = stat.avgRssi
                 val stdRssi = stat.stdDevRssi()
-                summaryLines.add("EPC: ${stat.epc}; I=$totalInt; R=$r; R%=${"%.2f".format(percent)}; N=${"%.2f".format(avg)}; S(N)=${"%.2f".format(std)}; min=${stat.minCount}; RSSI=${"%.1f".format(avgRssi)}; S(RSSI)=${"%.2f".format(stdRssi)}")
+                val csvLine = "CSV;${experimentNumber.value};$startDate;$endDate;$zone;$mounting;$distance;$angle;$pollution;${if (duration == -1) "авто" else "$duration с"};${"%.1f".format(interval)};$note;${stat.epc};$totalInt;$r;${"%.2f".format(percent)};${"%.2f".format(avg)};${"%.2f".format(std)};${stat.minCount};${"%.1f".format(avgRssi)};${"%.2f".format(stdRssi)}"
+                csvLines.add(csvLine)
             }
-            // Убрана пустая строка из summaryLines
-            writeLinesSync(summaryLines)
+        }
+        if (csvLines.isNotEmpty()) {
+            writeLinesSync(csvLines)
+        }
 
-            // CSV-строки для каждого EPC или пустая строка, если нет EPC
-            val csvLines = mutableListOf<String>()
-            val startDate = formatDate(experimentStartTime)
-            val endDate = formatDate()
+        playNotificationSound()
+        closeFileStream()
 
-            if (_statsList.value.isEmpty()) {
-                // Нет ни одного EPC – записываем строку с пустыми полями для статистики
-                val commonPrefix = "CSV;${experimentNumber.value};$startDate;$endDate;$zone;$mounting;$distance;$angle;$pollution;$duration;$interval;$note"
-                val emptyCsv = commonPrefix + ";".repeat(9) // 9 пустых полей (EPC, I, R, R%, N, S(N), min, RSSI, S(RSSI))
-                csvLines.add(emptyCsv)
-            } else {
-                _statsList.value.forEach { stat ->
-                    val totalInt = _totalIntervals.value
-                    val r = stat.successfulIntervals
-                    val percent = if (totalInt > 0) (r * 100.0) / totalInt else 0.0
-                    val avg = stat.avgCount(totalInt)
-                    val std = stat.stdDev(totalInt)
-                    val avgRssi = stat.avgRssi
-                    val stdRssi = stat.stdDevRssi()
-                    val csvLine = "CSV;${experimentNumber.value};$startDate;$endDate;$zone;$mounting;$distance;$angle;$pollution;$duration;$interval;$note;${stat.epc};$totalInt;$r;${"%.2f".format(percent)};${"%.2f".format(avg)};${"%.2f".format(std)};${stat.minCount};${"%.1f".format(avgRssi)};${"%.2f".format(stdRssi)}"
-                    csvLines.add(csvLine)
-                }
+        experimentNumber.value++
+        prefs.edit().putInt("last_exp_number", experimentNumber.value).apply()
+    }
+
+    private fun playNotificationSound() {
+        viewModelScope.launch(Dispatchers.Main) {
+            try {
+                val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                val ringtone = RingtoneManager.getRingtone(getApplication(), notificationUri)
+                ringtone.play()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-            if (csvLines.isNotEmpty()) {
-                writeLinesSync(csvLines)
-            }
-
-            closeFileStream()
-
-            playNotificationSound() //звук окончания
-            experimentNumber.value++
-            prefs.edit().putInt("last_exp_number", experimentNumber.value).apply()
         }
     }
 
@@ -360,15 +452,12 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
                 val rssi = tagData[tagData.size - 1].toInt() and 0xFF
                 val now = System.currentTimeMillis()
 
-                // Если полный режим – сохраняем строку для записи в конце интервала
                 if (protocolType == "полный") {
                     intervalLines.add("${formatDate(now)};$epcHex;$rssi")
                 }
 
-                // Обновляем счетчик интервала
                 intervalEpcCounts[epcHex] = (intervalEpcCounts[epcHex] ?: 0) + 1
 
-                // Обновляем глобальную статистику RSSI
                 val currentStats = _statsList.value.toMutableList()
                 var stat = currentStats.find { it.epc == epcHex }
                 if (stat == null) {
@@ -468,17 +557,5 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         super.onCleared()
         UsbDataDispatcher.unregisterListener(this)
         closeFileStream()
-    }
-
-    private fun playNotificationSound() {
-        viewModelScope.launch(Dispatchers.Main) {
-            try {
-                val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                val ringtone = RingtoneManager.getRingtone(getApplication(), notificationUri)
-                ringtone.play()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
     }
 }

@@ -80,12 +80,19 @@ class LongExperimentActivity : ComponentActivity() {
 @Composable
 fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     val context = LocalContext.current
+    val view = LocalView.current
     val isConnected by UsbConnectionHolder.isConnected
     val isExperimentRunning by viewModel.isExperimentRunning.collectAsState()
     val currentTime by viewModel.currentTime.collectAsState()
     val statsList by viewModel.statsList.collectAsState()
     val experimentNumber by viewModel.experimentNumber.collectAsState()
     val totalIntervals by viewModel.totalIntervals.collectAsState()
+
+    // Удержание экрана
+    DisposableEffect(isExperimentRunning) {
+        view.keepScreenOn = isExperimentRunning
+        onDispose { view.keepScreenOn = false }
+    }
 
     // Состояния выпадающих списков
     var expandedZone by remember { mutableStateOf(false) }
@@ -112,22 +119,19 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
 
     val distanceOptions = (1..20).map { it * 0.5 }       // 0.5 ... 10.0
     val angleOptions = (0..180 step 30).toList()
-    val durationOptions = listOf(50, 100, 200)
+    val durationOptions = listOf(50, 100, 200, -1)       // -1 для "авто"
     val intervalOptions = listOf(0.5, 1.0, 2.0)
     val zoneOptions = listOf("А", "Б", "В0", "В30", "В45", "В60", "В90")
     val mountingOptions = listOf("M", "C")
     val pollutionOptions = listOf("нет", "вода", "масло")
     val protocolTypeOptions = listOf("итоги", "полный")
-    val view = LocalView.current
-    val isTestRunning by viewModel.isExperimentRunning.collectAsState()
 
-    //функция удержание экрана активным во время теста
-    DisposableEffect(isTestRunning) {
-        view.keepScreenOn = isTestRunning
-        onDispose {
-            view.keepScreenOn = false
-        }
+    fun durationDisplay(value: Int): String = when (value) {
+        -1 -> "авто"
+        else -> "$value с"
     }
+
+    fun intervalDisplay(value: Double): String = "%.1f с".format(value)
 
     Scaffold(
         topBar = {
@@ -166,7 +170,6 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Номер эксперимента (увеличенный шрифт)
                         Box(modifier = Modifier.weight(1f)) {
                             OutlinedTextField(
                                 value = "%04d".format(experimentNumber),
@@ -263,7 +266,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 onExpandedChange = { expandedDuration = it }
                             ) {
                                 OutlinedTextField(
-                                    value = "$selectedDuration с",
+                                    value = durationDisplay(selectedDuration),
                                     onValueChange = {},
                                     readOnly = true,
                                     label = { Text("Длит.") },
@@ -280,7 +283,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 ) {
                                     durationOptions.forEach { value ->
                                         DropdownMenuItem(
-                                            text = { Text("$value с") },
+                                            text = { Text(durationDisplay(value)) },
                                             onClick = {
                                                 selectedDuration = value
                                                 expandedDuration = false
@@ -297,7 +300,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 onExpandedChange = { expandedInterval = it }
                             ) {
                                 OutlinedTextField(
-                                    value = "%.1f с".format(selectedInterval),
+                                    value = intervalDisplay(selectedInterval),
                                     onValueChange = {},
                                     readOnly = true,
                                     label = { Text("Инт.") },
@@ -314,7 +317,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 ) {
                                     intervalOptions.forEach { value ->
                                         DropdownMenuItem(
-                                            text = { Text("%.1f с".format(value)) },
+                                            text = { Text(intervalDisplay(value)) },
                                             onClick = {
                                                 selectedInterval = value
                                                 expandedInterval = false
@@ -473,7 +476,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Строка 4: Примечание (на всю ширину)
+                    // Строка 4: Примечание
                     OutlinedTextField(
                         value = selectedNote,
                         onValueChange = { selectedNote = it },
@@ -489,7 +492,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Кнопки управления (без изменений)
+            // Кнопки "Отправить протокол" и "Очистить протокол"
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -534,7 +537,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Блок "Течение эксперимента" (без изменений)
+            // Блок "Течение эксперимента"
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -583,12 +586,13 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("EPC", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(2f))
-                            Text("R", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                            Text("%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                            Text("EPC", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(3f))
+                            Text("R", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(0.8f))
+                            Text("%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f)) // увеличено
                             Text("N", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                             Text("S", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                            Text("min", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                            Text("CV", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                            Text("min", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(0.8f))
                             Text("RSSI", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                         }
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -604,6 +608,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 val percent = if (totalInt > 0) (r * 100) / totalInt else 0
                                 val avg = stat.avgCount(totalInt)
                                 val std = stat.stdDev(totalInt)
+                                val cv = if (avg > 0) std / avg else 0.0
                                 val avgRssi = stat.avgRssi
                                 Row(
                                     modifier = Modifier
@@ -621,32 +626,44 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     Text(
                                         text = "$r",
                                         style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(0.8f),
+                                        maxLines = 1
                                     )
                                     Text(
                                         text = "$percent%",
                                         style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1
                                     )
                                     Text(
                                         text = "%.2f".format(avg),
                                         style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1
                                     )
                                     Text(
                                         text = "%.2f".format(std),
                                         style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = "%.2f".format(cv),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1
                                     )
                                     Text(
                                         text = "${stat.minCount}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1
                                     )
                                     Text(
                                         text = "%.1f".format(avgRssi),
                                         style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1
                                     )
                                 }
                             }

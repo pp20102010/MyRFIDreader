@@ -318,8 +318,9 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     private fun shouldStopEarly(): Boolean {
         if (_totalIntervals.value <= 12) return false
         val stats = _statsList.value
-        if (stats.isEmpty()) return false
-        // Для каждого EPC проверяем, что CV <= 0.05 (avg гарантированно > 0)
+        // Если нет ни одного EPC, завершаем досрочно
+        if (stats.isEmpty()) return true
+        // Иначе проверяем условие для всех EPC
         return stats.all { stat ->
             val avg = stat.avgCount(_totalIntervals.value)
             (stat.stdDev(_totalIntervals.value) / avg) <= 0.05
@@ -332,9 +333,13 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
 
         val summaryLines = mutableListOf<String>()
         val finishLine = if (earlyStop) {
-            "Эксперимент серия: ${experimentNumber.value} ; завершен досрочно по стабильности ; ${formatDate()} ; Зона: $zone ; Крепление: $mounting ; Расстояние: $distance ; Угол: $angle ; Загрязнение: $pollution ; Длительность: ${if (duration == -1) "авто" else "$duration с"} ; Интервал: ${"%.1f".format(interval)} с ; Примечание: $note"
+            if (_statsList.value.isEmpty()) {
+                "Эксперимент серия: ${experimentNumber.value} ; завершен досрочно (за 12инт. нет счит. меток) ; ${formatDate()} ; Зона: $zone ; Крепление: $mounting ; Расстояние: $distance ; Угол: $angle ; Загрязнение: $pollution ; Длительность: ${if (duration == -1) "авто" else "$duration с"} ; Интервал: ${"%.1f".format(interval)} с ; Примечание: $note"
+            } else {
+                "Эксперимент серия: ${experimentNumber.value} ; завершен досрочно по стабильности ; ${formatDate()} ; ..."
+            }
         } else {
-            "Эксперимент серия: ${experimentNumber.value} ; завершен ; ${formatDate()} ; Зона: $zone ; Крепление: $mounting ; Расстояние: $distance ; Угол: $angle ; Загрязнение: $pollution ; Длительность: ${if (duration == -1) "авто" else "$duration с"} ; Интервал: ${"%.1f".format(interval)} с ; Примечание: $note"
+            "Эксперимент серия: ${experimentNumber.value} ; завершен ; ${formatDate()} ; ..."
         }
         summaryLines.add(finishLine)
         summaryLines.add("Итоговая статистика:")

@@ -1,3 +1,4 @@
+// LongExperimentViewModel.kt
 package com.example.myrfidreader
 
 import android.app.Application
@@ -27,19 +28,30 @@ import java.util.Locale
 
 class LongExperimentViewModel(application: Application) : AndroidViewModel(application), OnDataReceivedListener {
 
-    val experimentNumber = MutableStateFlow(1)
+    // Параметры эксперимента
+    var experimentNumber = MutableStateFlow(1)
     var zone by mutableStateOf("А"); private set
     var mounting by mutableStateOf("M"); private set
     var distance by mutableStateOf(0.5); private set
     var angle by mutableStateOf(0); private set
     var pollution by mutableStateOf("нет"); private set
-    var duration by mutableStateOf(-1) ; private set
+    var duration by mutableStateOf(-1) // авто по умолчанию
+        private set
     var interval by mutableStateOf(2.0); private set
     var protocolType by mutableStateOf("итоги") // "итоги" или "полный"
         private set
-    var note by mutableStateOf("") // примечание, свободный текст
+    var note by mutableStateOf("") // примечание
         private set
 
+    // Редактируемый номер (пользователь может менять до старта)
+    var editableExperimentNumber by mutableStateOf(experimentNumber.value)
+        private set
+
+    fun setExperimentNumber(value: Int) {
+        editableExperimentNumber = value
+    }
+
+    // Состояния
     private val _isExperimentRunning = MutableStateFlow(false)
     val isExperimentRunning: StateFlow<Boolean> = _isExperimentRunning
 
@@ -52,31 +64,31 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     private val _totalIntervals = MutableStateFlow(0)
     val totalIntervals: StateFlow<Int> = _totalIntervals
 
-    // Счетчики для текущего интервала (EPC -> количество считываний)
+    // Счетчики для текущего интервала
     private var intervalEpcCounts = mutableMapOf<String, Int>()
-    // Для записи строк интервала (будем накапливать и записывать одной пачкой) – только в полном режиме
     private var intervalLines = mutableListOf<String>()
 
     private var intervalIndex = 0
     private var experimentStartTime = 0L
 
     private var timerJob: Job? = null
+    private var communicationCheckJob: Job? = null
+    private var communicationOk = false
 
     private val prefs: SharedPreferences = application.getSharedPreferences("long_exp_prefs", Context.MODE_PRIVATE)
     private val dateFormatter = SimpleDateFormat("yyMMdd HH:mm:ss.SSS", Locale.getDefault())
     private val file = File(application.filesDir, "experiment_log.txt")
     private val incomingBuffer = mutableListOf<Byte>()
 
-    // Поток для записи в файл, открытый на всё время эксперимента
     private var fileOutputStream: FileOutputStream? = null
 
-    // Флаг, был ли уже записан CSV-заголовок
     private var isHeaderWritten: Boolean
         get() = prefs.getBoolean("is_header_written", false)
         set(value) = prefs.edit().putBoolean("is_header_written", value).apply()
 
     init {
         experimentNumber.value = prefs.getInt("last_exp_number", 1)
+        editableExperimentNumber = experimentNumber.value
         UsbDataDispatcher.registerListener(this)
     }
 
@@ -92,41 +104,77 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
 
     fun isInputValid(): Boolean = true
 
+    // Проверка связи с ридером (команда 0xE0)
+    private suspend fun checkCommunication(): Boolean = withContext(Dispatchers.IO) {
+        val cmd = byteArrayOf(
+            0x53, 0x57,
+            0x00, 0x03,
+            0x01.toByte(),
+            0xE0.toByte(),
+            0x00
+        )
+        var sum = 0
+        for (i in 0 until cmd.size - 1) sum += cmd[i].toInt() and 0xFF
+        cmd[cmd.size - 1] = ((sum.inv() + 1) and 0xFF).toByte()
+
+        communicationOk = false
+        UsbConnectionHolder.write(cmd)
+
+        var attempts = 0
+        while (!communicationOk && attempts < 10) {
+            delay(100)
+            attempts++
+        }
+        communicationOk
+    }
+
     fun startExperiment() {
         if (_isExperimentRunning.value) return
 
-        closeFileStream()
-
-        try {
-            fileOutputStream = FileOutputStream(file, true)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return
-        }
-
-        _isExperimentRunning.value = true
-        _currentTime.value = 0.0
-        _totalIntervals.value = 0
-        intervalIndex = 0
-        experimentStartTime = System.currentTimeMillis()
-        incomingBuffer.clear()
-        intervalEpcCounts.clear()
-        intervalLines.clear()
-        _statsList.value = emptyList()
-
-        timerJob = viewModelScope.launch {
-            while (_isExperimentRunning.value) {
-                _currentTime.value = (System.currentTimeMillis() - experimentStartTime) / 1000.0
-                delay(1000)
-            }
-        }
-
         viewModelScope.launch {
+            // Проверка связи перед запуском  - временно отключено
+//            if (!checkCommunication()) {
+//                withContext(Dispatchers.Main) {
+//                    Toast.makeText(getApplication(), "Нет связи с ридером", Toast.LENGTH_LONG).show()
+//                }
+//                return@launch
+//            }
+
+            // Устанавливаем номер эксперимента из редактируемого поля
+            experimentNumber.value = editableExperimentNumber
+
+            closeFileStream()
+            try {
+                fileOutputStream = FileOutputStream(file, true)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                return@launch
+            }
+
+            _isExperimentRunning.value = true
+            _currentTime.value = 0.0
+            _totalIntervals.value = 0
+            intervalIndex = 0
+            experimentStartTime = System.currentTimeMillis()
+            incomingBuffer.clear()
+            intervalEpcCounts.clear()
+            intervalLines.clear()
+            _statsList.value = emptyList()
+
+            timerJob = viewModelScope.launch {
+                while (_isExperimentRunning.value) {
+                    _currentTime.value = (System.currentTimeMillis() - experimentStartTime) / 1000.0
+                    delay(1000)
+                }
+            }
+
+            // Запись CSV-заголовка, если файл новый
             if (!isHeaderWritten) {
                 val header = "CSV;Эксперимент серия №;Начат;Закончен;Зона;Крепление;Расстояние;Угол;Загрязнение;Длительность;Интервал;Примечание;EPC;Интервалов в эксперименте(I);Результативных интервалов(R);Результативность%(R%);Считываний среднее(N);Среднее отклонение считывания(S(N));Минимум считываний в результативном интервале(min);Средний уровень принятого сигнала(RSSI);Среднее отклонение (S(RSSI))"
                 writeLinesSync(listOf(header))
                 isHeaderWritten = true
             }
+            // Пустая строка перед началом
             writeLinesSync(listOf(""))
             val startLine = "Эксперимент серия: ${experimentNumber.value} ; начат ; ${formatDate()}"
             writeLinesSync(listOf(startLine))
@@ -250,7 +298,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     }
 
     private suspend fun runExperimentAutoDuration() {
-        val maxDurationMs = 200000L // 200 с
+        val maxDurationMs = 200000L // 200 секунд
         val intervalMs = (interval * 1000).toLong()
         val pauseMs = intervalMs
         val startTime = System.currentTimeMillis()
@@ -292,7 +340,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
                 writeLinesSync(intervalLines)
             }
 
-            // Проверка условия досрочного завершения
+            // Проверка досрочного завершения
             if (shouldStopEarly()) {
                 finishExperiment(earlyStop = true)
                 return
@@ -318,9 +366,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     private fun shouldStopEarly(): Boolean {
         if (_totalIntervals.value <= 12) return false
         val stats = _statsList.value
-        // Если нет ни одного EPC, завершаем досрочно
-        if (stats.isEmpty()) return true
-        // Иначе проверяем условие для всех EPC
+        if (stats.isEmpty()) return true // нет ни одной метки – досрочно
         return stats.all { stat ->
             val avg = stat.avgCount(_totalIntervals.value)
             (stat.stdDev(_totalIntervals.value) / avg) <= 0.05
@@ -328,18 +374,28 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     }
 
     private suspend fun finishExperiment(earlyStop: Boolean) {
+        // Проверяем связь перед записью итогов - временно закомментировано
+//        if (!checkCommunication()) {
+//            // Прерываем эксперимент
+//            _isExperimentRunning.value = false
+//            timerJob?.cancel()
+//            writeLinesSync(listOf("${formatDate()}; Прекращен в связи с отсутствием связи с ридером", ""))
+//            playNotificationSound()
+//            closeFileStream()
+//            return
+//        }
+
         _isExperimentRunning.value = false
         timerJob?.cancel()
 
         val summaryLines = mutableListOf<String>()
-        val finishLine = if (earlyStop) {
-            if (_statsList.value.isEmpty()) {
+        val finishLine = when {
+            earlyStop && _statsList.value.isEmpty() ->
                 "Эксперимент серия: ${experimentNumber.value} ; завершен досрочно (за 12инт. нет счит. меток) ; ${formatDate()} ; Зона: $zone ; Крепление: $mounting ; Расстояние: $distance ; Угол: $angle ; Загрязнение: $pollution ; Длительность: ${if (duration == -1) "авто" else "$duration с"} ; Интервал: ${"%.1f".format(interval)} с ; Примечание: $note"
-            } else {
-                "Эксперимент серия: ${experimentNumber.value} ; завершен досрочно по стабильности ; ${formatDate()} ; ..."
-            }
-        } else {
-            "Эксперимент серия: ${experimentNumber.value} ; завершен ; ${formatDate()} ; ..."
+            earlyStop ->
+                "Эксперимент серия: ${experimentNumber.value} ; завершен досрочно по стабильности ; ${formatDate()} ; Зона: $zone ; Крепление: $mounting ; Расстояние: $distance ; Угол: $angle ; Загрязнение: $pollution ; Длительность: ${if (duration == -1) "авто" else "$duration с"} ; Интервал: ${"%.1f".format(interval)} с ; Примечание: $note"
+            else ->
+                "Эксперимент серия: ${experimentNumber.value} ; завершен ; ${formatDate()} ; Зона: $zone ; Крепление: $mounting ; Расстояние: $distance ; Угол: $angle ; Загрязнение: $pollution ; Длительность: ${if (duration == -1) "авто" else "$duration с"} ; Интервал: ${"%.1f".format(interval)} с ; Примечание: $note"
         }
         summaryLines.add(finishLine)
         summaryLines.add("Итоговая статистика:")
@@ -385,6 +441,8 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
 
         experimentNumber.value++
         prefs.edit().putInt("last_exp_number", experimentNumber.value).apply()
+        // Синхронизируем редактируемый номер
+        editableExperimentNumber = experimentNumber.value
     }
 
     private fun playNotificationSound() {
@@ -436,6 +494,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         val data = packet.copyOfRange(7, packet.size - 1)
         if (status != 0x01) return
         when (cmd) {
+            0xE0 -> communicationOk = true
             0x01, 0x45 -> parseTags(data, cmd)
         }
     }
@@ -536,6 +595,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             if (file.exists()) file.delete()
             isHeaderWritten = false
             experimentNumber.value = 1
+            editableExperimentNumber = 1
             prefs.edit().putInt("last_exp_number", 1).apply()
         }
     }

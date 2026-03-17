@@ -153,6 +153,15 @@ fun LauncherScreen() {
                 Text("Длительный эксперимент")
             }
 
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    context.startActivity(Intent(context, ProtocolViewActivity::class.java))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Протокол эксперимента")
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
 

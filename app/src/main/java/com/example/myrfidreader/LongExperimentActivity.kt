@@ -1,3 +1,4 @@
+// LongExperimentActivity.kt
 package com.example.myrfidreader
 
 import android.os.Bundle
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -55,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -88,7 +91,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     val experimentNumber by viewModel.experimentNumber.collectAsState()
     val totalIntervals by viewModel.totalIntervals.collectAsState()
 
-    // Удержание экрана
+    // Удержание экрана во время эксперимента
     DisposableEffect(isExperimentRunning) {
         view.keepScreenOn = isExperimentRunning
         onDispose { view.keepScreenOn = false }
@@ -104,7 +107,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     var expandedInterval by remember { mutableStateOf(false) }
     var expandedProtocolType by remember { mutableStateOf(false) }
 
-    // Локальные переменные для редактирования
+    // Локальные переменные для редактирования (синхронизируются с ViewModel через collectAsState)
     var selectedZone by remember { mutableStateOf(viewModel.zone) }
     var selectedMounting by remember { mutableStateOf(viewModel.mounting) }
     var selectedDistance by remember { mutableDoubleStateOf(viewModel.distance) }
@@ -165,21 +168,28 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                     Text("Параметр серии", style = MaterialTheme.typography.titleMedium)
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Строка 1: №, Зона, Крепление
+                    // Строка 1: № (редактируемый), Зона, Крепление
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // Номер эксперимента (редактируемый)
                         Box(modifier = Modifier.weight(1f)) {
                             OutlinedTextField(
-                                value = "%04d".format(experimentNumber),
-                                onValueChange = {},
-                                readOnly = true,
+                                value = viewModel.editableExperimentNumber.toString(),
+                                onValueChange = { newValue ->
+                                    val intValue = newValue.toIntOrNull()
+                                    if (intValue != null && intValue > 0) {
+                                        viewModel.setExperimentNumber(intValue)
+                                    }
+                                },
                                 label = { Text("№") },
                                 textStyle = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .defaultMinSize(minHeight = 32.dp)
+                                    .defaultMinSize(minHeight = 32.dp),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                             )
                         }
                         // Зона
@@ -556,6 +566,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                 if (isExperimentRunning) {
                                     viewModel.stopExperiment()
                                 } else {
+                                    // Применяем выбранные значения к ViewModel (кроме номера, он уже в editableExperimentNumber)
                                     viewModel.updateZone(selectedZone)
                                     viewModel.updateMounting(selectedMounting)
                                     viewModel.updateDistance(selectedDistance)
@@ -588,7 +599,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                         ) {
                             Text("EPC", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(2f))
                             Text("R", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(0.8f))
-                            Text("%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f)) // увеличено
+                            Text("%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                             Text("N", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                             Text("S", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                             Text("CV", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
@@ -656,7 +667,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     Text(
                                         text = "${stat.minCount}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(0.8f),
+                                        modifier = Modifier.weight(1f),
                                         maxLines = 1
                                     )
                                     Text(

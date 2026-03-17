@@ -586,13 +586,13 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("EPC", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(3f))
+                            Text("EPC", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(2f))
                             Text("R", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(0.8f))
                             Text("%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f)) // увеличено
                             Text("N", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                             Text("S", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                             Text("CV", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                            Text("min", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(0.8f))
+                            Text("min", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                             Text("RSSI", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                         }
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -656,7 +656,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     Text(
                                         text = "${stat.minCount}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.weight(0.8f),
                                         maxLines = 1
                                     )
                                     Text(

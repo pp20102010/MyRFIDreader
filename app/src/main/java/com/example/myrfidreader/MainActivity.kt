@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -41,6 +42,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -134,7 +136,7 @@ class MainActivity : ComponentActivity() {
     fun shareLogFile() {
         val file = File(filesDir, "rfid_logs.txt")
         if (!file.exists() || file.length() == 0L) {
-            android.widget.Toast.makeText(this, "Лог пуст", android.widget.Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Лог пуст", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -151,7 +153,7 @@ class MainActivity : ComponentActivity() {
             }
             startActivity(Intent.createChooser(shareIntent, "Отправить лог через..."))
         } catch (e: Exception) {
-            android.widget.Toast.makeText(this, "Ошибка: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 }
@@ -163,6 +165,7 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
     var showDialog by remember { mutableStateOf(false) }
     var expandedBaud by remember { mutableStateOf(false) }
     val currentBaud = viewModel.baudRate
+    var commandText by remember { mutableStateOf("") }
 
     if (showDialog) {
         AlertDialog(
@@ -296,7 +299,6 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary
                 )
 
-                // Кнопка скорости (белая, уменьшенная)
                 Box {
                     Button(
                         onClick = { expandedBaud = true },
@@ -341,6 +343,44 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
+            // Поле для ввода произвольной команды
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = commandText,
+                    onValueChange = { commandText = it },
+                    label = { Text("Запрос/команда HEX") },
+                    placeholder = { Text("53 57 00 03 01 20 32") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    isError = commandText.isNotEmpty() && !isValidHex(commandText)
+                )
+                Button(
+                    onClick = {
+                        if (!UsbConnectionHolder.isConnected.value) {
+                            Toast.makeText(context, "Ридер не подключён", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        val bytes = parseHexString(commandText)
+                        if (bytes == null) {
+                            Toast.makeText(context, "Неверный HEX-формат", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        UsbConnectionHolder.write(bytes)
+                        Toast.makeText(context, "Команда отправлена", Toast.LENGTH_SHORT).show()
+                        commandText = ""
+                    },
+                    enabled = UsbConnectionHolder.isConnected.value && commandText.isNotBlank() && isValidHex(commandText)
+                ) {
+                    Text("Ввод")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Лог сообщений
             LazyColumn(
                 modifier = Modifier
@@ -367,10 +407,9 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Кнопка во всю ширину для возврата на главный экран
+            // Кнопка "На главный экран"
             Button(
                 onClick = {
-                    // Запускаем LauncherActivity и очищаем стек
                     val intent = Intent(context, LauncherActivity::class.java)
                     intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
                     context.startActivity(intent)
@@ -383,4 +422,19 @@ fun RfidScreen(viewModel: SerialViewModel, onConnectClick: () -> Unit) {
     }
 }
 
+
+private fun isValidHex(input: String): Boolean {
+    val cleaned = input.replace(" ", "")
+    return cleaned.all { it in "0123456789ABCDEFabcdef" } && cleaned.length % 2 == 0
+}
+
+private fun parseHexString(input: String): ByteArray? {
+    val cleaned = input.replace(" ", "")
+    if (cleaned.isEmpty() || cleaned.length % 2 != 0) return null
+    return try {
+        cleaned.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+    } catch (e: Exception) {
+        null
+    }
+}
 // baudRateToString уже есть в Utils.kt, поэтому отдельно не определяем.

@@ -22,7 +22,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -41,7 +40,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -124,7 +122,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     val angleOptions = (0..180 step 30).toList()
     val durationOptions = listOf(50, 100, 200, -1)       // -1 для "авто"
     val intervalOptions = listOf(0.5, 1.0, 2.0)
-    val zoneOptions = listOf("А", "Б", "В0", "В30", "В45", "В60", "В90")
+    val zoneOptions = listOf("А", "Б", "В0", "В30", "В45", "В60", "В90", "Д")
     val mountingOptions = listOf("M", "C")
     val pollutionOptions = listOf("нет", "вода", "масло")
     val protocolTypeOptions = listOf("итоги", "полный")
@@ -498,51 +496,6 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                         singleLine = true
                     )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Кнопки "Отправить протокол" и "Очистить протокол"
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = { viewModel.shareProtocol(context) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Отправить протокол")
-                }
-                Button(
-                    onClick = { showClearDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Очистить протокол")
-                }
-            }
-
-            if (showClearDialog) {
-                AlertDialog(
-                    onDismissRequest = { showClearDialog = false },
-                    title = { Text("Очистить протокол?") },
-                    text = { Text("Все записи в файле протокола будут безвозвратно удалены, номер эксперимента сбросится.") },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                viewModel.clearProtocol()
-                                showClearDialog = false
-                            }
-                        ) {
-                            Text("Очистить", color = MaterialTheme.colorScheme.error)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showClearDialog = false }) {
-                            Text("Отмена")
-                        }
-                    }
-                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))

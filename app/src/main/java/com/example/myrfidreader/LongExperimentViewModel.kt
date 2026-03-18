@@ -79,6 +79,7 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     private val dateFormatter = SimpleDateFormat("yyMMdd HH:mm:ss.SSS", Locale.getDefault())
     private val file = File(application.filesDir, "experiment_log.txt")
     private val incomingBuffer = mutableListOf<Byte>()
+    private var expectingCommunicationResponse = false
 
     private var fileOutputStream: FileOutputStream? = null
 
@@ -104,19 +105,15 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
 
     fun isInputValid(): Boolean = true
 
-    // Проверка связи с ридером (команда 0xE0)
+    // Проверка связи с ридером
+
     private suspend fun checkCommunication(): Boolean = withContext(Dispatchers.IO) {
-        val cmd = byteArrayOf(
-            0x53, 0x57,
-            0x00, 0x03,
-            0x01.toByte(),
-            0xE0.toByte(),
-            0x00
-        )
+        val cmd = byteArrayOf(0x53, 0x57, 0x00, 0x03, 0x01, 0x20, 0x00)
         var sum = 0
         for (i in 0 until cmd.size - 1) sum += cmd[i].toInt() and 0xFF
         cmd[cmd.size - 1] = ((sum.inv() + 1) and 0xFF).toByte()
 
+        expectingCommunicationResponse = true
         communicationOk = false
         UsbConnectionHolder.write(cmd)
 
@@ -125,20 +122,22 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
             delay(100)
             attempts++
         }
+        expectingCommunicationResponse = false
         communicationOk
     }
+
 
     fun startExperiment() {
         if (_isExperimentRunning.value) return
 
         viewModelScope.launch {
             // Проверка связи перед запуском  - временно отключено
-//            if (!checkCommunication()) {
-//                withContext(Dispatchers.Main) {
-//                    Toast.makeText(getApplication(), "Нет связи с ридером", Toast.LENGTH_LONG).show()
-//                }
-//                return@launch
-//            }
+            if (!checkCommunication()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Нет связи с ридером, проверьте питание", Toast.LENGTH_LONG).show()
+                }
+                return@launch
+            }
 
             // Устанавливаем номер эксперимента из редактируемого поля
             experimentNumber.value = editableExperimentNumber
@@ -374,16 +373,20 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     }
 
     private suspend fun finishExperiment(earlyStop: Boolean) {
-        // Проверяем связь перед записью итогов - временно закомментировано
-//        if (!checkCommunication()) {
-//            // Прерываем эксперимент
-//            _isExperimentRunning.value = false
-//            timerJob?.cancel()
-//            writeLinesSync(listOf("${formatDate()}; Прекращен в связи с отсутствием связи с ридером", ""))
-//            playNotificationSound()
-//            closeFileStream()
-//            return
-//        }
+         //Проверяем связь перед записью итогов
+        if (!checkCommunication()) {
+            // Прерываем эксперимент
+            _isExperimentRunning.value = false
+            timerJob?.cancel()
+            writeLinesSync(listOf("${formatDate()}; Прекращен в связи с отсутствием связи с ридером", ""))
+            playNotificationSound()
+            closeFileStream()
+            // Добавляем Toast
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Результаты не сохранены, потеряна связь с ридером, проверьте питание", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
 
         _isExperimentRunning.value = false
         timerJob?.cancel()
@@ -458,7 +461,8 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
     }
 
     override fun onDataReceived(data: ByteArray) {
-        if (!_isExperimentRunning.value) return
+        // Разрешаем приём, если эксперимент запущен ИЛИ мы ждём ответ на проверку связи
+        if (!_isExperimentRunning.value && !expectingCommunicationResponse) return
         incomingBuffer.addAll(data.toList())
         processIncomingBuffer()
     }
@@ -492,12 +496,21 @@ class LongExperimentViewModel(application: Application) : AndroidViewModel(appli
         val cmd = packet[5].toInt() and 0xFF
         val status = packet[6].toInt() and 0xFF
         val data = packet.copyOfRange(7, packet.size - 1)
+
+        // Если это ответ на проверку связи (0x20)
+        if (cmd == 0x20) {
+            communicationOk = true
+            return
+        }
+
         if (status != 0x01) return
+
         when (cmd) {
-            0xE0 -> communicationOk = true
+            0xE0 -> communicationOk = true // оставлено для совместимости
             0x01, 0x45 -> parseTags(data, cmd)
         }
     }
+
 
     private fun parseTags(data: ByteArray, cmd: Int) {
         if (cmd == 0x45) {

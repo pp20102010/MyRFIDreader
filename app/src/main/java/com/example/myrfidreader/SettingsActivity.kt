@@ -99,6 +99,9 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
     var expandedPower by remember { mutableStateOf(false) }
     var expandedMode by remember { mutableStateOf(false) }
 
+    // Поле для ввода EPC и кнопка Write
+    var epcText by remember { mutableStateOf("") }
+
     // Синхронизация локальных переменных с состояниями ViewModel
     LaunchedEffect(baudRateState) { selectedBaudRate = baudRateState }
     LaunchedEffect(rfPowerState) { rfPower = rfPowerState }
@@ -301,6 +304,43 @@ fun SettingsScreen(viewModel: SettingsViewModel = viewModel()) {
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // Поле для ввода EPC и кнопка Write
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = epcText,
+                        onValueChange = { epcText = it },
+                        label = { Text("Новый EPC (24 символа)") },
+                        placeholder = { Text("AB0004000000000000054321") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        isError = epcText.isNotEmpty() && !isValidEpc(epcText)
+                    )
+                    Button(
+                        onClick = {
+                            if (!isConnected) {
+                                Toast.makeText(context, "Ридер не подключён", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            if (!isValidEpc(epcText)) {
+                                Toast.makeText(context, "Неверный формат EPC (24 символа 0-9A-F)", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            viewModel.writeEpc(epcText)
+                            epcText = ""
+                        },
+                        enabled = isConnected && epcText.isNotEmpty() && isValidEpc(epcText)
+                    ) {
+                        Text("Write")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
                 // ===== Кнопки управления =====
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -430,4 +470,10 @@ fun workModeShortToString(value: Int): String = when (value) {
     1 -> "Active"
     2 -> "Trigger"
     else -> "Неизвестно"
+}
+
+// Проверка валидности EPC номера для записи
+private fun isValidEpc(input: String): Boolean {
+    val cleaned = input.replace(" ", "")
+    return cleaned.length == 24 && cleaned.all { it in "0123456789ABCDEFabcdef" }
 }

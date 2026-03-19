@@ -149,4 +149,5 @@ class SerialViewModel(application: Application) : AndroidViewModel(application),
         UsbDataDispatcher.unregisterListener(this)
         // Не закрываем соединение, оно живёт в холдере
     }
+
 }

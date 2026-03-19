@@ -2,6 +2,7 @@ package com.example.myrfidreader
 
 import android.app.Application
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -27,9 +28,11 @@ data class PendingSettings(
     val buzzerEnabled: Boolean
 )
 
-class SettingsViewModel(application: Application) : AndroidViewModel(application), OnDataReceivedListener {
+class SettingsViewModel(application: Application) : AndroidViewModel(application),
+    OnDataReceivedListener {
 
-    private val _baudRate = MutableStateFlow(4)   // индекс скорости: 0=9600,1=19200,2=38400,3=57600,4=115200
+    private val _baudRate =
+        MutableStateFlow(4)   // индекс скорости: 0=9600,1=19200,2=38400,3=57600,4=115200
     val baudRate: StateFlow<Int> = _baudRate
 
     private val _rfPower = MutableStateFlow(26)   // мощность 0..26 dB
@@ -61,7 +64,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     // ------------------ Публичные методы ------------------
-    fun applySettings(baudRate: Int, rfPower: Int, workMode: Int, filterTime: Int, buzzerEnabled: Boolean) {
+    fun applySettings(
+        baudRate: Int,
+        rfPower: Int,
+        workMode: Int,
+        filterTime: Int,
+        buzzerEnabled: Boolean
+    ) {
         val safeRfPower = rfPower.coerceIn(0, 30)
         pendingSettings = PendingSettings(baudRate, rfPower, workMode, filterTime, buzzerEnabled)
         readDeviceParams()
@@ -148,7 +157,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
             if (incomingBuffer.size < 8) break
 
-            val length = ((incomingBuffer[2].toInt() and 0xFF) shl 8) or (incomingBuffer[3].toInt() and 0xFF)
+            val length =
+                ((incomingBuffer[2].toInt() and 0xFF) shl 8) or (incomingBuffer[3].toInt() and 0xFF)
             val totalPacketLen = 4 + length
             if (incomingBuffer.size < totalPacketLen) break
 
@@ -204,7 +214,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         _filterTime.value = params[3].toInt() and 0xFF   // bFilterTime (смещение 3)
         _buzzerEnabled.value = (params[5].toInt() and 0xFF) != 0 // bBeepEnable (смещение 5)
 
-        addLogEntry("RX", "Текущие настройки: режим ${_workMode.value}, мощность ${_rfPower.value}, скорость ${_baudRate.value}, фильтр ${_filterTime.value}, зуммер ${_buzzerEnabled.value}")
+        addLogEntry(
+            "RX",
+            "Текущие настройки: режим ${_workMode.value}, мощность ${_rfPower.value}, скорость ${_baudRate.value}, фильтр ${_filterTime.value}, зуммер ${_buzzerEnabled.value}"
+        )
 
         // Если есть ожидающие новые настройки, модифицируем и отправляем
         pendingSettings?.let { pending ->
@@ -283,5 +296,65 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     override fun onCleared() {
         super.onCleared()
         UsbDataDispatcher.unregisterListener(this)
+    }
+
+    fun writeEpc(epcHex: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val epcBytes = hexStringToByteArray(epcHex)
+            if (epcBytes.size != 12) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        getApplication(),
+                        "EPC должен быть 12 байт (24 символа)",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+                return@launch
+            }
+
+            // Длина данных по алгоритму 666: 0x14 (20) – фиксировано для 12‑байтового EPC
+            val length = 0x14
+
+            // Формируем пакет (без контрольной суммы)
+            val cmd =
+                ByteArray(2 + 2 + 1 + 1 + 1 + 4 + 12 + 1) // заголовок(2) + длина(2) + адрес(1) + команда(1) + длина слов(1) + пароль(4) + EPC(12) + CS(1)
+            cmd[0] = 0x53
+            cmd[1] = 0x57
+            cmd[2] = ((length shr 8) and 0xFF).toByte()
+            cmd[3] = (length and 0xFF).toByte()
+            cmd[4] = 0xFF.toByte()          // широковещательный адрес
+            cmd[5] = 0x04                    // команда записи EPC
+            cmd[6] = (epcBytes.size / 2).toByte() // длина в словах (6)
+            // пароль (4 нулевых байта)
+            cmd[7] = 0
+            cmd[8] = 0
+            cmd[9] = 0
+            cmd[10] = 0
+            // копируем EPC
+            epcBytes.copyInto(cmd, 11)
+
+            // Контрольная сумма: сумма ВСЕХ байтов от начала пакета (индекс 0) до последнего байта EPC (индекс 22)
+            var sum = 0
+            for (i in 0 until cmd.size - 1) {
+                sum += cmd[i].toInt() and 0xFF
+            }
+            cmd[cmd.size - 1] = ((sum.inv() + 1) and 0xFF).toByte()
+
+            UsbConnectionHolder.write(cmd)
+
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Команда записи отправлена", Toast.LENGTH_SHORT)
+                    .show()
+            }
+        }
+    }
+
+    // Вспомогательная функция (можно поместить в тот же файл)
+    private fun hexStringToByteArray(s: String): ByteArray {
+        val cleaned = s.replace(" ", "")
+        require(cleaned.length % 2 == 0) { "Hex string must have even length" }
+        return ByteArray(cleaned.length / 2) {
+            cleaned.substring(it * 2, it * 2 + 2).toInt(16).toByte()
+        }
     }
 }

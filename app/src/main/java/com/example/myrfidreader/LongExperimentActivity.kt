@@ -21,7 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -122,7 +122,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
     val angleOptions = (0..180 step 30).toList()
     val durationOptions = listOf(50, 100, 200, -1)       // -1 для "авто"
     val intervalOptions = listOf(0.5, 1.0, 2.0)
-    val zoneOptions = listOf("А", "Б", "В0", "В30", "В45", "В60", "В90", "Д")
+    val zoneOptions = listOf("А", "Б", "В45", "Д","Н" )
     val mountingOptions = listOf("M", "C")
     val pollutionOptions = listOf("нет", "вода", "масло")
     val protocolTypeOptions = listOf("итоги", "полный")
@@ -140,7 +140,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                 title = { Text("Длительный эксперимент") },
                 navigationIcon = {
                     IconButton(onClick = { (context as? LongExperimentActivity)?.finish() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -282,7 +282,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDuration) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 32.dp)
+                                        .defaultMinSize(minHeight = 72.dp)
                                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
@@ -316,7 +316,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedInterval) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 32.dp)
+                                        .defaultMinSize(minHeight = 72.dp)
                                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
@@ -350,7 +350,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProtocolType) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 32.dp)
+                                        .defaultMinSize(minHeight = 72.dp)
                                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
@@ -393,7 +393,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDistance) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 32.dp)
+                                        .defaultMinSize(minHeight = 72.dp)
                                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
@@ -427,7 +427,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedAngle) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 32.dp)
+                                        .defaultMinSize(minHeight = 72.dp)
                                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
@@ -461,7 +461,7 @@ fun LongExperimentScreen(viewModel: LongExperimentViewModel = viewModel()) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPollution) },
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .defaultMinSize(minHeight = 32.dp)
+                                        .defaultMinSize(minHeight = 72.dp)
                                         .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
                                 )
                                 DropdownMenu(
